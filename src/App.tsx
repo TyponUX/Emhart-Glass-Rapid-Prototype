@@ -51,7 +51,7 @@ function ComponentInventory() {
 }
 
 function PortalApp() {
-  const [route, setRoute] = useState<PortalRoute>("dashboard");
+  const [route, setRoute] = useState<PortalRoute>(() => new URLSearchParams(window.location.search).get("view") === "ui-inventory" ? "ui-inventory" : "dashboard");
   const [role, setRole] = useState<PortalRole>(users[0].role);
   const [accountId, setAccountId] = useState(accounts[0].id);
   const [selectedMachineId, setSelectedMachineId] = useState<string | undefined>();
