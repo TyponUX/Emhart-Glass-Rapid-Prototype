@@ -57,7 +57,7 @@ export function PortalShell({ route, role, accountId, onRouteChange, onRoleChang
 	return (
 		<div className="min-h-screen bg-background text-foreground">
 			<aside className="fixed inset-y-0 left-0 hidden w-72 border-r bg-sidebar text-sidebar-foreground lg:flex lg:flex-col">
-				<div className="border-b px-6 py-6"><img src="/assets/images/EmharGlass-logo-white.png" alt="Bucher Emhart Glass" className="h-14 w-auto max-w-full object-contain object-left" /><p className="mt-4 text-lg font-semibold tracking-tight">Service Portal</p></div>
+				<div className="border-b px-6 py-6"><img src={`${import.meta.env.BASE_URL}assets/images/EmharGlass-logo-white.png`} alt="Bucher Emhart Glass" className="h-14 w-auto max-w-full object-contain object-left" /><p className="mt-4 text-lg font-semibold tracking-tight">Service Portal</p></div>
 				<nav className="flex-1 space-y-1 overflow-y-auto px-3 py-5" aria-label="Main navigation">
 					<p className="px-3 pb-2 text-xs font-semibold uppercase tracking-wide text-text-sidebar">Workspace</p>
 					{primaryNavigation.map(({ route: itemRoute, label, icon: Icon }) => <Button key={itemRoute} variant={route === itemRoute ? "secondary" : "ghost"} className="w-full justify-start gap-3" aria-current={route === itemRoute ? "page" : undefined} onClick={() => onRouteChange(itemRoute)}><Icon className="size-4" /><span className="flex-1 text-left">{label}</span>{itemRoute === "quotes" && cartCount > 0 && <Badge variant="secondary">{cartCount}</Badge>}</Button>)}
