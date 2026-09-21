@@ -154,7 +154,7 @@ export function SupportCenter({ accountId, role }: { accountId: string; role: Po
         <div className="space-y-2">
           
           <h1 className="text-3xl font-semibold tracking-tight">Equipment support</h1>
-          <p className="max-w-2xl text-muted-foreground">Create an equipment-linked request, keep evidence and messages together, and follow it through resolution.</p>
+          <p className="max-w-2xl text-muted-foreground"></p>
         </div>
         <div className="flex items-center gap-2"><Badge variant="outline">Customer view · {role}</Badge><Button onClick={openBlankRequest}><Plus className="mr-2 size-4" />New support request</Button></div>
       </div>
@@ -182,7 +182,7 @@ export function SupportCenter({ accountId, role }: { accountId: string; role: Po
         </Card>
       ) : (
         <div className="grid gap-6 xl:grid-cols-[minmax(280px,0.72fr)_minmax(0,1.8fr)]">
-          <Card className="h-fit">
+          <Card className="h-fit bg-action-panel-color">
             <CardHeader><CardTitle className="text-base">Requests</CardTitle></CardHeader>
             <CardContent className="space-y-3">
               <div className="grid grid-cols-2 gap-2">

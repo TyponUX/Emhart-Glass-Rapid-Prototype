@@ -27,7 +27,6 @@ export function MachineOverview({ accountId, onSelectMachine }: MachineOverviewP
       <div className="space-y-2">
         
         <h1 className="text-3xl font-semibold tracking-tight">My Equipment</h1>
-        <p className="max-w-2xl text-muted-foreground">Select a machine to explore its assemblies, parts, documents, and related support work.</p>
       </div>
       <Card>
         <CardHeader><CardTitle className="text-base">Find a machine</CardTitle></CardHeader>

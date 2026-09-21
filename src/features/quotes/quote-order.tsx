@@ -94,7 +94,7 @@ export function QuoteOrder() {
       <div className="space-y-2">
         
         <h1 className="text-3xl font-semibold tracking-tight">Commercial hub</h1>
-        <p className="max-w-2xl text-muted-foreground">Parts and services collected from anywhere in the portal are quoted, approved, and tracked here.</p>
+        <p className="max-w-2xl text-muted-foreground"></p>
       </div>
 
       <div className="flex flex-wrap gap-2 border-b pb-3">
@@ -108,7 +108,7 @@ export function QuoteOrder() {
 
       {tab === "cart" && (
         <div className="grid gap-6 lg:grid-cols-[1.6fr_0.9fr]">
-          <Card>
+          <Card className="bg-action-panel-color">
             <CardHeader><CardTitle>Collected items</CardTitle></CardHeader>
             <CardContent className="space-y-3">
               {cart.length === 0 ? (

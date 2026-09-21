@@ -132,7 +132,7 @@ export function ProductsAndServices({ accountId, onGoToCart, onRequestSupport }:
         <div className="space-y-2">
           
           <h1 className="text-3xl font-semibold tracking-tight">Emhart Glass catalogue</h1>
-          <p className="max-w-2xl text-muted-foreground">Browse the full parts and services catalogue, search by machine or part number, and add anything to the cart for a quote request.</p>
+          <p className="max-w-2xl text-muted-foreground"></p>
         </div>
         <Button variant="outline" onClick={onGoToCart}><ShoppingCart className="mr-2 size-4" />View cart{cartCount > 0 && <Badge variant="secondary" className="ml-2">{cartCount}</Badge>}</Button>
       </div>
@@ -151,9 +151,9 @@ export function ProductsAndServices({ accountId, onGoToCart, onRequestSupport }:
 
       {tab === "catalogue" && (
         <div className="grid gap-6 xl:grid-cols-[1fr_1.5fr]">
-          <Card className="h-fit bg-action-panel-color">
+          <Card className="flex max-h-[calc(100dvh-11rem)] min-h-0 flex-col bg-action-panel-color">
             <CardHeader><CardTitle className="text-base">Search the catalogue</CardTitle></CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="flex min-h-0 flex-1 flex-col space-y-4 overflow-hidden">
               <div className="space-y-2">
                 <Label htmlFor="catalogue-search">Machine, document or part</Label>
                 <Input id="catalogue-search" placeholder="e.g. NIS, TNB040 or 200-202-1" value={query} onChange={(event) => setQuery(event.target.value)} />
@@ -183,49 +183,51 @@ export function ProductsAndServices({ accountId, onGoToCart, onRequestSupport }:
                 </div>
               )}
 
-              {contentType === "parts" && partsMode === "bom" ? (
-                <div className="space-y-4">
-                  {bomMachines.map((machine) => {
-                    const tree = getEquipmentTree(machine, assemblies, parts);
-                    return (
-                      <div key={machine.id} className="space-y-2">
-                        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{machine.name}</p>
-                        {tree.children.length === 0 ? (
-                          <p className="text-xs text-muted-foreground">No published assemblies.</p>
-                        ) : (
-                          tree.children.map((assemblyNode) => (
-                            <div key={assemblyNode.id} className="space-y-1">
-                              <p className="flex items-center gap-1 text-sm font-medium"><ChevronRight className="size-3" />{assemblyNode.label}</p>
-                              <div className="ml-4 space-y-1 border-l pl-3">
-                                {assemblyNode.children.map((partNode) => (
-                                  <button key={partNode.id} className={`block w-full border px-3 py-2 text-left text-sm hover:bg-accent ${partNode.id === selectedPart.id ? "bg-accent" : ""}`} onClick={() => selectPart(partNode.id)}>{partNode.label}</button>
-                                ))}
+              <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain pr-2">
+                {contentType === "parts" && partsMode === "bom" ? (
+                  <div className="space-y-4">
+                    {bomMachines.map((machine) => {
+                      const tree = getEquipmentTree(machine, assemblies, parts);
+                      return (
+                        <div key={machine.id} className="space-y-2">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{machine.name}</p>
+                          {tree.children.length === 0 ? (
+                            <p className="text-xs text-muted-foreground">No published assemblies.</p>
+                          ) : (
+                            tree.children.map((assemblyNode) => (
+                              <div key={assemblyNode.id} className="space-y-1">
+                                <p className="flex items-center gap-1 text-sm font-medium"><ChevronRight className="size-3" />{assemblyNode.label}</p>
+                                <div className="ml-4 space-y-1 border-l pl-3">
+                                  {assemblyNode.children.map((partNode) => (
+                                    <button key={partNode.id} className={`block w-full border px-3 py-2 text-left text-sm hover:bg-accent ${partNode.id === selectedPart.id ? "bg-accent" : ""}`} onClick={() => selectPart(partNode.id)}>{partNode.label}</button>
+                                  ))}
+                                </div>
                               </div>
-                            </div>
-                          ))
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : contentType === "all" ? (
-                <div className="space-y-2">
-                  {catalogueResults.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">No catalogue records match your search.</p>
-                  ) : (
-                    (["machines", "parts", "documents"] as const).map((group) => groupedResults[group].length > 0 && (
-                      <div key={group} className="space-y-2 pt-2">
-                        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{group}</p>
-                        {groupedResults[group].map(renderResult)}
-                      </div>
-                    ))
-                  )}
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {catalogueResults.length === 0 ? <p className="text-sm text-muted-foreground">No {contentType} match your search.</p> : catalogueResults.map(renderResult)}
-                </div>
-              )}
+                            ))
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : contentType === "all" ? (
+                  <div className="space-y-2">
+                    {catalogueResults.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">No catalogue records match your search.</p>
+                    ) : (
+                      (["machines", "parts", "documents"] as const).map((group) => groupedResults[group].length > 0 && (
+                        <div key={group} className="space-y-2 pt-2">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{group}</p>
+                          {groupedResults[group].map(renderResult)}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {catalogueResults.length === 0 ? <p className="text-sm text-muted-foreground">No {contentType} match your search.</p> : catalogueResults.map(renderResult)}
+                  </div>
+                )}
+              </div>
             </CardContent>
           </Card>
 
