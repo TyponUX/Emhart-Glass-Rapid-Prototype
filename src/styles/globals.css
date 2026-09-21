@@ -1,0 +1,123 @@
+@import "tailwindcss";
+
+:root {
+  --background: #fff;
+  --text-heading: #000b21;
+  --text-body: #000
+  ;
+  --text-secondary: #4d3535;
+  --text-muted: #5a6b70;
+  --text-disabled: #89969a;
+  --text-primary: #dc2626;
+  --text-sidebar: #ffffff;
+  --text-link: #00697f;
+  --text-inverse: #ffffff;
+  --text-success: #287a55;
+  --text-warning: #ff8800;
+  --text-danger: #ff9400;
+  --Lines-boarders: #d9e1e3;
+  --action-panel-color: #eeeded;
+  --font-colour: var(--text-body);
+  --foreground: var(--text-body);
+  --card: #fff;
+  --card-foreground: var(--text-body);
+  --card-border: var(--Lines-boarders);
+  --popover: #ffffff;
+  --popover-foreground: var(--text-body);
+  --popover-border: var(--Lines-boarders);
+  --primary: #b01204;
+  --primary-foreground: var(--text-inverse);
+  --secondary: rgba(240, 140, 140, 0.809);
+  --secondary-foreground: var(--text-body);
+  --muted: #edf1f2;
+  --muted-foreground: #000;
+  --accent: #e3bcbc3f;
+  --accent-foreground: var(--text-heading);
+  --destructive: #eeb006;
+  --destructive-foreground: var(--text-inverse);
+  --border: var(--Lines-boarders);
+  --input: var(--Lines-boarders);
+  --input-background: #ffffff;
+  --ring: #00697f;
+  --sidebar: #404040;
+  --sidebar-foreground: var(--text-sidebar);
+  --success: #287a55;
+  --success-background: #e8f5ed;
+  --warning: #ff9400;
+  --warning-background: #fa5a00;
+  --info: #25688a;
+  --info-background: #e8f2f8;
+  --inactive: #647277;
+  --inactive-background: #edf0f1;
+  --radius: 0.5rem;
+  font-family: sans-serif;
+  color: var(--font-colour);
+  background: var(--background);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-font-colour: var(--font-colour);
+  --color-heading: var(--text-heading);
+  --color-body: var(--text-body);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-muted: var(--text-muted);
+  --color-text-disabled: var(--text-disabled);
+  --color-text-primary: var(--text-primary);
+  --color-text-sidebar: var(--text-sidebar);
+  --color-link: var(--text-link);
+  --color-inverse: var(--text-inverse);
+  --color-text-success: var(--text-success);
+  --color-text-warning: var(--text-warning);
+  --color-text-danger: var(--text-danger);
+  --color-lines-boarders: var(--Lines-boarders);
+  --color-action-panel-color: var(--action-panel-color);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-card-border: var(--card-border);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover-border: var(--popover-border);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-input-background: var(--input-background);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-success: var(--success);
+  --color-success-background: var(--success-background);
+  --color-warning: var(--warning);
+  --color-warning-background: var(--warning-background);
+  --color-info: var(--info);
+  --color-info-background: var(--info-background);
+  --color-inactive: var(--inactive);
+  --color-inactive-background: var(--inactive-background);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+}
+
+@layer base {
+  *,
+  ::before,
+  ::after {
+    border-color: var(--Lines-boarders);
+  }
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  background: var(--background);
+}

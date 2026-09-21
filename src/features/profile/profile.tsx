@@ -1,0 +1,20 @@
+import { useState } from "react";
+import { Bell, Building2, UserRound } from "lucide-react";
+
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { accounts, users, type PortalRole } from "@/data/portal-data";
+
+export function Profile({ role, accountId, onRoleChange }: { role: PortalRole; accountId: string; onRoleChange: (role: PortalRole) => void }) {
+  const user = users.find((candidate) => candidate.role === role) ?? users[0];
+  const account = accounts.find((candidate) => candidate.id === accountId) ?? accounts[0];
+  const [language, setLanguage] = useState("English");
+  const [timezone, setTimezone] = useState("Europe/Zurich");
+  const [saved, setSaved] = useState(false);
+
+  return <section className="space-y-8"><div className="space-y-2"><h1 className="text-3xl font-semibold tracking-tight">My Profile</h1><p className="text-muted-foreground">Manage your prototype identity, company context, and notification preferences.</p></div><div className="grid gap-6 lg:grid-cols-2"><Card><CardHeader><CardTitle className="flex items-center gap-2"><UserRound className="size-4" />User details</CardTitle></CardHeader><CardContent className="space-y-4"><div className="space-y-2"><Label htmlFor="profile-name">Name</Label><Input id="profile-name" value={user.name} readOnly /></div><div className="space-y-2"><Label htmlFor="profile-role">Role</Label><Select value={user.role} onValueChange={(value) => onRoleChange(value as PortalRole)}><SelectTrigger id="profile-role"><SelectValue /></SelectTrigger><SelectContent>{users.map((candidate) => <SelectItem key={candidate.id} value={candidate.role}>{candidate.name} · {candidate.role}</SelectItem>)}</SelectContent></Select></div><Badge variant="secondary">Prototype role context</Badge></CardContent></Card><Card><CardHeader><CardTitle className="flex items-center gap-2"><Building2 className="size-4" />Company details</CardTitle></CardHeader><CardContent className="space-y-4"><div className="space-y-2"><Label htmlFor="profile-company">Organisation</Label><Input id="profile-company" value={account.organisation} readOnly /></div><div className="space-y-2"><Label htmlFor="profile-site">Active site</Label><Input id="profile-site" value={account.sites[0]} readOnly /></div></CardContent></Card><Card><CardHeader><CardTitle>Preferences</CardTitle></CardHeader><CardContent className="space-y-4"><div className="space-y-2"><Label htmlFor="profile-language">Language</Label><Select value={language} onValueChange={setLanguage}><SelectTrigger id="profile-language"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="English">English</SelectItem><SelectItem value="German">German</SelectItem></SelectContent></Select></div><div className="space-y-2"><Label htmlFor="profile-timezone">Timezone</Label><Select value={timezone} onValueChange={setTimezone}><SelectTrigger id="profile-timezone"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Europe/Zurich">Europe/Zurich</SelectItem><SelectItem value="Europe/London">Europe/London</SelectItem></SelectContent></Select></div><Button onClick={() => setSaved(true)}>{saved ? "Preferences saved" : "Save preferences"}</Button></CardContent></Card><Card><CardHeader><CardTitle className="flex items-center gap-2"><Bell className="size-4" />Notification settings</CardTitle></CardHeader><CardContent className="space-y-3"><p className="text-sm text-muted-foreground">Choose what the portal should surface in the notification centre.</p><div className="flex flex-wrap gap-2"><Badge variant="outline">Document updates</Badge><Badge variant="outline">Support requests</Badge><Badge variant="outline">Quotes and orders</Badge></div></CardContent></Card></div></section>;
+}
