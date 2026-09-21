@@ -1,5 +1,5 @@
 import { useMemo, useState, type ReactNode } from "react";
-import { BarChart3, Bell, CircleUserRound, GraduationCap, LayoutDashboard, LifeBuoy, PackageSearch, Search, Settings, ShieldCheck, ShoppingCart, Wrench } from "lucide-react";
+import { BarChart3, Bell, CircleUserRound, GraduationCap, LayoutDashboard, LifeBuoy, PackageSearch, Search, ShieldCheck, ShoppingCart, Wrench } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -63,7 +63,7 @@ export function PortalShell({ route, role, accountId, onRouteChange, onRoleChang
 					{primaryNavigation.map(({ route: itemRoute, label, icon: Icon }) => <Button key={itemRoute} variant={route === itemRoute ? "secondary" : "ghost"} className="w-full justify-start gap-3" aria-current={route === itemRoute ? "page" : undefined} onClick={() => onRouteChange(itemRoute)}><Icon className="size-4" /><span className="flex-1 text-left">{label}</span>{itemRoute === "quotes" && cartCount > 0 && <Badge variant="secondary">{cartCount}</Badge>}</Button>)}
 					{disabledNavigation.length > 0 && <><p className="px-3 pb-2 pt-7 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Coming later</p>{disabledNavigation.map((label) => <Button key={label} variant="ghost" disabled className="w-full justify-start gap-3"><span className="size-1.5 rounded-full bg-muted-foreground/40" />{label}</Button>)}</>}
 				</nav>
-				<div className="border-t p-3"><Button variant={route === "profile" ? "secondary" : "ghost"} className="w-full justify-start gap-3" onClick={() => onRouteChange("profile")}><CircleUserRound className="size-4" />My Profile</Button><Button variant="ghost" className="mt-1 w-full justify-start gap-3" onClick={() => onRouteChange("ui-inventory")}><Settings className="size-4" />UI inventory</Button></div>
+				<div className="border-t p-3"><Button variant={route === "profile" ? "secondary" : "ghost"} className="w-full justify-start gap-3" onClick={() => onRouteChange("profile")}><CircleUserRound className="size-4" />My Profile</Button></div>
 			</aside>
 
 			<div className="lg:pl-72">
