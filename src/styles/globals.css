@@ -16,7 +16,7 @@
   --text-warning: #ff8800;
   --text-danger: #ff9400;
   --Lines-boarders: #d9e1e3;
-  --action-panel-color: #eeeded;
+  --action-panel-color: #0000000b;
   --font-colour: var(--text-body);
   --foreground: var(--text-body);
   --card: #fff;
@@ -25,13 +25,13 @@
   --popover: #ffffff;
   --popover-foreground: var(--text-body);
   --popover-border: var(--Lines-boarders);
-  --primary: #b01204;
+  --primary: #000;
   --primary-foreground: var(--text-inverse);
-  --secondary: rgba(240, 140, 140, 0.809);
+  --secondary: #00000042;
   --secondary-foreground: var(--text-body);
   --muted: #edf1f2;
   --muted-foreground: #000;
-  --accent: #e3bcbc3f;
+  --accent: #00000020;
   --accent-foreground: var(--text-heading);
   --destructive: #eeb006;
   --destructive-foreground: var(--text-inverse);
@@ -39,7 +39,7 @@
   --input: var(--Lines-boarders);
   --input-background: #ffffff;
   --ring: #00697f;
-  --sidebar: #404040;
+  --sidebar: #fff
   --sidebar-foreground: var(--text-sidebar);
   --success: #287a55;
   --success-background: #e8f5ed;
@@ -50,7 +50,7 @@
   --inactive: #647277;
   --inactive-background: #edf0f1;
   --radius: 0.5rem;
-  font-family: sans-serif;
+  font-family: "Noto Sans", sans-serif;
   color: var(--font-colour);
   background: var(--background);
 }
