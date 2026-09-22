@@ -47,6 +47,7 @@ export interface SupportRequest {
   actionsTaken?: string;
   followUp?: string;
   feedback?: string;
+  feedbackRating?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -76,7 +77,7 @@ interface SupportContextValue {
   resolveRequest: (id: string, resolution: { summary: string; rootCause: string; actionsTaken: string; followUp: string }) => void;
   confirmResolved: (id: string) => void;
   reopenRequest: (id: string, note: string) => void;
-  submitFeedback: (id: string, feedback: string) => void;
+  submitFeedback: (id: string, feedback: string, rating: number) => void;
   markMessagesRead: (id: string) => void;
 }
 
@@ -183,7 +184,6 @@ const additionalRequests: SupportRequest[] = [
     rootCause: "Wear in the legacy mounting set introduced excess play.",
     actionsTaken: "Installed part 210-194-2 and completed an alignment check.",
     followUp: "Inspect mounting play at the next planned maintenance interval.",
-    feedback: "Clear instructions and quick response.",
     createdAt: "2026-09-12",
     updatedAt: "2026-09-15",
   },
@@ -311,7 +311,7 @@ export function SupportProvider({ children }: { children: ReactNode }) {
     ],
   })), [addSystemMessage, updateRequest]);
 
-  const submitFeedback = useCallback((id: string, feedback: string) => updateRequest(id, (request) => ({ ...request, feedback, updatedAt: today() })), [updateRequest]);
+  const submitFeedback = useCallback((id: string, feedback: string, rating: number) => updateRequest(id, (request) => ({ ...request, feedback, feedbackRating: rating, updatedAt: today() })), [updateRequest]);
 
   const markMessagesRead = useCallback((id: string) => updateRequest(id, (request) => ({
     ...request,

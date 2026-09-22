@@ -10,6 +10,8 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { accounts, assemblies, documents, machines, parts, services, type CompatibilityStatus } from "@/data/portal-data";
 import { useTransaction } from "@/features/quotes/transaction-context";
+import { AddToProject } from "@/features/projects/add-to-project";
+import { useActionFeedback } from "@/components/shared/action-feedback";
 import { fitsOwnedEquipment, getCurrentPart, getEquipmentTree, getOrderability, getPartAlternatives, getPartNumberHistory, getWhereUsed, searchCatalogue, type CatalogueContentType, type CatalogueSearchResult } from "@/lib/portal-logic";
 
 type ProductsTab = "catalogue" | "services";
@@ -34,9 +36,10 @@ export function ProductsAndServices({ accountId, onGoToCart, onRequestSupport }:
   const [selectedPartId, setSelectedPartId] = useState(parts[0].id);
   const [quantity, setQuantity] = useState(1);
   const [serviceMachine, setServiceMachine] = useState<string>("all");
-  const [lastAdded, setLastAdded] = useState<string | undefined>();
 
   const { addToCart, cartCount } = useTransaction();
+  const { showFeedback } = useActionFeedback();
+
 
   const catalogueResults = useMemo(
     () => searchCatalogue(query, contentType, { machines, parts, documents }, machineFilter === "all" ? undefined : machineFilter),
@@ -107,7 +110,7 @@ export function ProductsAndServices({ accountId, onGoToCart, onRequestSupport }:
       deliveryLocation: account.sites[0],
       compatibility: orderability,
     });
-    setLastAdded(`${quantity} × ${selectedPart.name}`);
+    showFeedback({ itemName: `${quantity} × ${selectedPart.name}`, destination: "cart" });
   }
 
   function handleAddService(serviceId: string) {
@@ -121,7 +124,7 @@ export function ProductsAndServices({ accountId, onGoToCart, onRequestSupport }:
       deliveryLocation: account.sites[0],
       compatibility: "compatible",
     });
-    setLastAdded(service.name);
+    showFeedback({ itemName: service.name, destination: "cart" });
   }
 
   const machineOptions = machines.map((machine) => ({ id: machine.id, label: `${machine.name}${ownedMachineIds.includes(machine.id) ? " · your equipment" : ""}` }));
@@ -141,13 +144,6 @@ export function ProductsAndServices({ accountId, onGoToCart, onRequestSupport }:
         <Button variant={tab === "catalogue" ? "secondary" : "ghost"} className="gap-2" onClick={() => setTab("catalogue")}><PackageSearch className="size-4" />Catalogue</Button>
         <Button variant={tab === "services" ? "secondary" : "ghost"} className="gap-2" onClick={() => setTab("services")}><Wrench className="size-4" />Services</Button>
       </div>
-
-      {lastAdded && (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border bg-green-50 p-3 text-sm text-green-800">
-          <span><strong>{lastAdded}</strong> was added to the cart.</span>
-          <Button size="sm" variant="outline" onClick={onGoToCart}>Go to cart<ArrowRight className="ml-2 size-4" /></Button>
-        </div>
-      )}
 
       {tab === "catalogue" && (
         <div className="grid gap-6 xl:grid-cols-[1fr_1.5fr]">
@@ -301,6 +297,7 @@ export function ProductsAndServices({ accountId, onGoToCart, onRequestSupport }:
                   </div>
                 </div>
                 <Button onClick={handleAddPart} disabled={orderability === "unavailable"}><ShoppingCart className="mr-2 size-4" />Add to cart · {selectedPart.currency} {(selectedPart.unitPrice * quantity).toLocaleString()}</Button>
+                <AddToProject defaultMachine={selectedPart.compatibleMachineIds[0]} buildItem={() => ({ type: "part", name: selectedPart.name, reference: selectedPart.partNumber, quantity, availability: selectedPart.availability, price: selectedPart.unitPrice * quantity, currency: selectedPart.currency, status: orderability === "compatible" ? "Ready to order" : "Planned" })} />
               </div>
             </CardContent>
           </Card>
@@ -397,8 +394,9 @@ export function ProductsAndServices({ accountId, onGoToCart, onRequestSupport }:
                   </div>
                 </div>
 
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   {selectedDocument.pdfPath && <Button asChild><a href={selectedDocument.pdfPath} target="_blank" rel="noreferrer"><Download className="mr-2 size-4" />Open PDF</a></Button>}
+                  <AddToProject defaultMachine={selectedDocument.relatedMachineIds[0]} buildItem={() => ({ type: "document", name: selectedDocument.title, reference: selectedDocument.documentId, quantity: 1, availability: "Available now", status: "Planned" })} />
                   <Button variant="outline" onClick={() => onRequestSupport({ site: account.sites[0], machineId: selectedDocument.relatedMachineIds[0] ?? account.machineIds[0], documentId: selectedDocument.id })}>Still need help</Button>
                 </div>
               </CardContent>
@@ -439,7 +437,7 @@ export function ProductsAndServices({ accountId, onGoToCart, onRequestSupport }:
                     <p className="text-sm text-muted-foreground">{service.description}</p>
                     <div className="mt-auto flex items-center justify-between gap-2">
                       <span className="text-xs text-muted-foreground">Lead time: {service.leadTime}</span>
-                      <Button size="sm" variant="outline" onClick={() => handleAddService(service.id)}><ShoppingCart className="mr-2 size-3" />Add to cart</Button>
+                      <div className="flex flex-wrap justify-end gap-2"><Button size="sm" variant="outline" onClick={() => handleAddService(service.id)}><ShoppingCart className="mr-2 size-3" />Add to cart</Button><AddToProject size="sm" defaultMachine={service.compatibleMachineIds[0]} buildItem={() => ({ type: "service", name: service.name, quantity: 1, availability: "Requestable", price: service.price, currency: service.currency, status: "Planned" })} /></div>
                     </div>
                   </CardContent>
                 </Card>

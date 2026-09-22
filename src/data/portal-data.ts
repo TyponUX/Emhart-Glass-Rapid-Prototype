@@ -156,8 +156,11 @@ export interface MaintenanceRecord {
 export interface TrainingRecord {
 	id: string;
 	title: string;
+  topic: string;
 	audience: string;
 	description: string;
+  date: string;
+  location: string;
 	compatibleMachineIds: string[];
 	format: "On-site" | "Remote" | "Catalogue only";
 	availability: "requestable" | "unavailable";
@@ -706,30 +709,39 @@ export const maintenanceActivities: MaintenanceRecord[] = [
 ];
 export const trainingOfferings: TrainingRecord[] = [
 	{
-		id: "training-baffle-maintenance",
-		title: "Pantograph baffle maintenance fundamentals",
-		audience: "Maintenance technicians and reliability teams",
-		description: "Practical guidance for inspecting alignment, mounting parts, and common wear signals on the pantograph baffle mechanism.",
-		compatibleMachineIds: ["machine-ef-512-01"],
+    id: "training-flexinspect-bc-gen-iii",
+    title: "FleXinspect BC Gen III Operational & Job Change",
+    topic: "FleXinspect",
+    audience: "Machine operators and maintenance technicians",
+    description: "Operational and job-change training for the FleXinspect BC Gen III inspection system.",
+    date: "2026-11-16",
+    location: "Munich, Germany",
+    compatibleMachineIds: [],
 		format: "On-site",
 		availability: "requestable",
 	},
 	{
-		id: "training-flexlube-operations",
-		title: "FleXLube zone operation",
-		audience: "Machine operators and maintenance technicians",
-		description: "An equipment overview covering zone distribution, oil pump controls, and routine checks for the FleXLube installation.",
-		compatibleMachineIds: ["machine-flexlube-01"],
-		format: "Remote",
+    id: "training-ais-mechanical-machine",
+    title: "AIS Mechanical Machine Training",
+    topic: "AIS",
+    audience: "Maintenance technicians and mechanical specialists",
+    description: "Mechanical machine training focused on AIS equipment operation and practical maintenance.",
+    date: "2026-11-23",
+    location: "Sundsvall, Sweden",
+    compatibleMachineIds: [],
+    format: "On-site",
 		availability: "requestable",
 	},
 	{
-		id: "training-advanced-diagnostics",
-		title: "Advanced IS machine diagnostics",
-		audience: "Engineering and reliability managers",
-		description: "A future training concept for advanced diagnostics. Details and scheduling are not available in this prototype.",
+    id: "training-smartfeeder-technical-operational",
+    title: "SMARTFEEDER – Technical & Operational Training",
+    topic: "SMARTFEEDER",
+    audience: "Machine operators, maintenance technicians, and engineers",
+    description: "Technical and operational training for SMARTFEEDER setup, operation, and maintenance.",
+    date: "2026-12-01",
+    location: "Sundsvall, Sweden",
 		compatibleMachineIds: [],
-		format: "Catalogue only",
-		availability: "unavailable",
+    format: "On-site",
+    availability: "requestable",
 	},
 ];

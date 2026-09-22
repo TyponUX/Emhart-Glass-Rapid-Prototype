@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 
 import { type LineItem, parts, services } from "@/data/portal-data";
+import type { ProjectItem } from "@/features/projects/project-context";
 
 export type ShipmentMilestoneKey =
   | "order-confirmed"
@@ -21,12 +22,13 @@ export interface ShipmentMilestone {
 }
 
 export type QuoteStatus = "requested" | "quoted" | "pending-clarification" | "ordered";
-export type OrderStatus = "in-progress" | "delivered" | "complete";
+export type OrderStatus = "received" | "confirmed" | "preparing" | "in-progress" | "delivered" | "complete";
 
 export interface QuoteEntry {
   id: string;
   number: string;
   requestNumber: string;
+  packageName?: string;
   items: LineItem[];
   status: QuoteStatus;
   revision: number;
@@ -44,7 +46,17 @@ export interface OrderEntry {
   status: OrderStatus;
   total: number;
   milestones: ShipmentMilestone[];
+  shipmentStarted?: boolean;
   createdAt: string;
+  estimatedArrivalByItem: Record<string, string>;
+}
+
+export interface TransactionNotification {
+  id: string;
+  title: string;
+  message: string;
+  createdAt: string;
+  read: boolean;
 }
 
 interface TransactionContextValue {
@@ -60,7 +72,10 @@ interface TransactionContextValue {
   requestClarification: (quoteId: string, note: string) => void;
   approveQuote: (quoteId: string) => string | undefined;
   advanceShipment: (orderId: string) => void;
+  advanceOrder: (orderId: string) => void;
   confirmReceipt: (orderId: string) => void;
+  createQuoteFromProjectItems: (items: ProjectItem[], equipmentId: string, packageName?: string) => { id: string; number: string } | undefined;
+  notifications: TransactionNotification[];
 }
 
 const SHIPMENT_SEQUENCE: ShipmentMilestoneKey[] = [
@@ -93,7 +108,14 @@ const MILESTONE_NOTES: Record<ShipmentMilestoneKey, string> = {
   received: "Customer confirmed receipt of the shipment.",
 };
 
+const ORDER_STATUS_SEQUENCE: OrderStatus[] = ["received", "confirmed", "preparing"];
+
 const formatDate = (date: Date) => date.toISOString().slice(0, 10);
+const addDays = (date: Date, days: number) => {
+  const result = new Date(date);
+  result.setDate(result.getDate() + days);
+  return result;
+};
 
 function createShipmentMilestones(currentKey: ShipmentMilestoneKey = "order-confirmed"): ShipmentMilestone[] {
   const currentIndex = SHIPMENT_SEQUENCE.indexOf(currentKey);
@@ -146,6 +168,7 @@ export function TransactionProvider({ children }: { children: ReactNode }) {
   const [cart, setCart] = useState<LineItem[]>([]);
   const [quotes, setQuotes] = useState<QuoteEntry[]>([]);
   const [orders, setOrders] = useState<OrderEntry[]>([]);
+  const [notifications, setNotifications] = useState<TransactionNotification[]>([]);
   const counterRef = useRef(147);
   const orderCounterRef = useRef(91);
   const timersRef = useRef<number[]>([]);
@@ -241,10 +264,11 @@ export function TransactionProvider({ children }: { children: ReactNode }) {
         number: orderNumber,
         quoteNumber: quote.number,
         items: quote.items,
-        status: "in-progress",
+        status: "received",
         total: quote.total,
         milestones: createShipmentMilestones("in-production"),
         createdAt: formatDate(new Date()),
+        estimatedArrivalByItem: Object.fromEntries(quote.items.map((item, index) => [item.id, formatDate(addDays(new Date(), 14 + index * 7))])),
       },
       ...current,
     ]);
@@ -252,6 +276,28 @@ export function TransactionProvider({ children }: { children: ReactNode }) {
 
     return orderId;
   }, [quotes]);
+
+  const createQuoteFromProjectItems = useCallback((projectItems: ProjectItem[], equipmentId: string, packageName?: string) => {
+    const items: LineItem[] = projectItems.flatMap((projectItem): LineItem[] => {
+      if (projectItem.type === "document") return [];
+      if (projectItem.type === "part") {
+        const part = parts.find((candidate) => candidate.partNumber === projectItem.reference || candidate.name === projectItem.name);
+        if (!part) return [];
+        return [{ id: `line-${Date.now()}-${part.id}`, type: "part" as const, partId: part.id, equipmentId, quantity: projectItem.quantity, deliveryLocation: "Northstar Glass Plant", compatibility: "compatible" as const }];
+      }
+      const service = services.find((candidate) => candidate.name === projectItem.name);
+      if (!service) return [];
+      return [{ id: `line-${Date.now()}-${service.id}`, type: "service" as const, serviceId: service.id, equipmentId, scope: "Repair project package", deliveryLocation: "Northstar Glass Plant", compatibility: "compatible" as const }];
+    });
+    if (items.length === 0) return undefined;
+    const sequence = counterRef.current++;
+    const quoteId = `quote-${sequence}`;
+    const quoteNumber = `Q-2026-${String(sequence).padStart(4, "0")}`;
+    setQuotes((current) => [{ id: quoteId, number: quoteNumber, requestNumber: `RFQ-2026-${String(sequence).padStart(4, "0")}`, packageName, items, status: "requested", revision: 1, total: computeTotal(items), clarificationNotes: [], createdAt: formatDate(new Date()) }, ...current]);
+    const timer = window.setTimeout(() => setQuotes((current) => current.map((quote) => quote.id === quoteId && quote.status === "requested" ? { ...quote, status: "quoted" } : quote)), 1200);
+    registerTimer(timer);
+    return { id: quoteId, number: quoteNumber };
+  }, [registerTimer]);
 
   const advanceShipment = useCallback((orderId: string) => {
     setOrders((current) => current.map((order) => {
@@ -262,8 +308,19 @@ export function TransactionProvider({ children }: { children: ReactNode }) {
       const milestones = advanceMilestones(order.milestones);
       const currentKey = milestones.find((milestone) => milestone.status === "current")?.key ?? "received";
       const status: OrderStatus = currentKey === "received" ? "complete" : currentKey === "delivered" ? "delivered" : "in-progress";
+      const nextLabel = MILESTONE_LABELS[currentKey];
+      setNotifications((currentNotifications) => [{ id: `shipment-${Date.now()}`, title: `Shipment update · ${order.number}`, message: `Shipment status changed to ${nextLabel}.`, createdAt: formatDate(new Date()), read: false }, ...currentNotifications]);
 
       return { ...order, milestones, status };
+    }));
+  }, []);
+
+  const advanceOrder = useCallback((orderId: string) => {
+    setOrders((current) => current.map((order) => {
+      const index = ORDER_STATUS_SEQUENCE.indexOf(order.status);
+      if (index < 0) return order;
+      if (index === ORDER_STATUS_SEQUENCE.length - 1) return { ...order, shipmentStarted: true, milestones: createShipmentMilestones("ready-to-ship") };
+      return { ...order, status: ORDER_STATUS_SEQUENCE[index + 1] };
     }));
   }, []);
 
@@ -271,7 +328,9 @@ export function TransactionProvider({ children }: { children: ReactNode }) {
     setOrders((current) => current.map((order) => (order.id === orderId
       ? { ...order, status: "complete", milestones: createShipmentMilestones("received") }
       : order)));
-  }, []);
+    const order = orders.find((candidate) => candidate.id === orderId);
+    if (order) setNotifications((current) => [{ id: `shipment-${Date.now()}`, title: `Shipment update · ${order.number}`, message: "Shipment status changed to Received.", createdAt: formatDate(new Date()), read: false }, ...current]);
+  }, [orders]);
 
   const value = useMemo<TransactionContextValue>(() => ({
     cart,
@@ -286,8 +345,11 @@ export function TransactionProvider({ children }: { children: ReactNode }) {
     requestClarification,
     approveQuote,
     advanceShipment,
+    advanceOrder,
     confirmReceipt,
-  }), [cart, quotes, orders, cartTotal, addToCart, removeFromCart, clearCart, submitCart, requestClarification, approveQuote, advanceShipment, confirmReceipt]);
+    createQuoteFromProjectItems,
+    notifications,
+  }), [cart, quotes, orders, cartTotal, addToCart, removeFromCart, clearCart, submitCart, requestClarification, approveQuote, advanceShipment, advanceOrder, confirmReceipt, createQuoteFromProjectItems, notifications]);
 
   return <TransactionContext.Provider value={value}>{children}</TransactionContext.Provider>;
 }

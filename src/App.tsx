@@ -14,7 +14,7 @@ import { MachineOverview } from "@/features/equipment/machine-overview";
 import { MachineExplorer } from "@/features/equipment/machine-explorer";
 import { ProductsAndServices } from "@/features/products/products-and-services";
 import { QuoteOrder } from "@/features/quotes/quote-order";
-import { TransactionProvider } from "@/features/quotes/transaction-context";
+import { TransactionProvider, useTransaction } from "@/features/quotes/transaction-context";
 import { SupportCenter } from "@/features/support/support-center";
 import { SupportProvider, useSupport } from "@/features/support/support-context";
 import { Dashboard } from "@/features/dashboard/dashboard";
@@ -23,6 +23,9 @@ import { Maintenance } from "@/features/maintenance/maintenance";
 import { Training } from "@/features/training/training";
 import { UserManagement } from "@/features/user-management/user-management";
 import { Reporting } from "@/features/reporting/reporting";
+import { Projects } from "@/features/projects/projects";
+import { ProjectProvider, useProjects } from "@/features/projects/project-context";
+import { ActionFeedbackProvider } from "@/components/shared/action-feedback";
 
 function ComponentInventory() {
   const [selected, setSelected] = useState(true);
@@ -55,12 +58,17 @@ function PortalApp() {
   const [role, setRole] = useState<PortalRole>(users[0].role);
   const [accountId, setAccountId] = useState(accounts[0].id);
   const [selectedMachineId, setSelectedMachineId] = useState<string | undefined>();
+  const [quoteToOpen, setQuoteToOpen] = useState<string | undefined>();
+  const [orderToOpen, setOrderToOpen] = useState<string | undefined>();
   const { beginRequest } = useSupport();
+  const { createQuoteFromProjectItems } = useTransaction();
+  const { updatePackageOrderByQuote } = useProjects();
   const titles: Record<Exclude<PortalRoute, "ui-inventory" | "notifications">, string> = {
     dashboard: "Welcome to the service portal",
     equipment: "My Equipment",
     maintenance: "Maintenance",
     training: "Training",
+    projects: "Projects",
     "user-management": "User Management",
     reporting: "Reporting",
     products: "Products & Services",
@@ -73,17 +81,13 @@ function PortalApp() {
     beginRequest(context);
     setRoute("support");
   };
-  const content = route === "ui-inventory" ? <ComponentInventory /> : route === "dashboard" ? <Dashboard accountId={accountId} onRouteChange={setRoute} /> : route === "equipment" ? selectedMachineId ? <MachineExplorer machineId={selectedMachineId} onBack={() => setSelectedMachineId(undefined)} onRequestSupport={(context) => openSupport({ accountId, ...context })} /> : <MachineOverview accountId={accountId} onSelectMachine={setSelectedMachineId} /> : route === "maintenance" ? <Maintenance accountId={accountId} /> : route === "training" ? <Training accountId={accountId} /> : route === "user-management" ? <UserManagement accountId={accountId} role={role} /> : route === "reporting" ? <Reporting accountId={accountId} /> : route === "products" ? <ProductsAndServices accountId={accountId} onGoToCart={() => setRoute("quotes")} onRequestSupport={(context) => openSupport({ accountId, ...context })} /> : route === "quotes" ? <QuoteOrder /> : route === "support" ? <SupportCenter accountId={accountId} role={role} /> : route === "profile" ? <Profile role={role} accountId={accountId} onRoleChange={setRole} /> : <PortalPlaceholder eyebrow="Prototype foundation" title={pageTitle} description="Choose a workspace area from the navigation to continue." />;
+  const content = route === "ui-inventory" ? <ComponentInventory /> : route === "dashboard" ? <Dashboard accountId={accountId} onRouteChange={setRoute} /> : route === "equipment" ? selectedMachineId ? <MachineExplorer machineId={selectedMachineId} onBack={() => setSelectedMachineId(undefined)} onRequestSupport={(context) => openSupport({ accountId, ...context })} /> : <MachineOverview accountId={accountId} onSelectMachine={setSelectedMachineId} /> : route === "maintenance" ? <Maintenance accountId={accountId} /> : route === "training" ? <Training accountId={accountId} /> : route === "projects" ? <Projects accountId={accountId} onRequestSupport={(context) => openSupport({ accountId, ...context })} onCreateQuote={(items, machineId, packageName) => createQuoteFromProjectItems(items, machineId, packageName)} onGoToQuotes={(quoteId) => { setQuoteToOpen(quoteId); setOrderToOpen(undefined); setRoute("quotes"); }} onGoToOrders={(orderId) => { setOrderToOpen(orderId); setQuoteToOpen(undefined); setRoute("quotes"); }} /> : route === "user-management" ? <UserManagement accountId={accountId} role={role} /> : route === "reporting" ? <Reporting accountId={accountId} /> : route === "products" ? <ProductsAndServices accountId={accountId} onGoToCart={() => setRoute("quotes")} onRequestSupport={(context) => openSupport({ accountId, ...context })} /> : route === "quotes" ? <QuoteOrder initialQuoteId={quoteToOpen} initialOrderId={orderToOpen} onOrderPlaced={(quoteId, orderId) => updatePackageOrderByQuote(quoteId, { id: orderId, number: orderId })} /> : route === "support" ? <SupportCenter accountId={accountId} role={role} /> : route === "profile" ? <Profile role={role} accountId={accountId} onRoleChange={setRole} /> : <PortalPlaceholder eyebrow="Prototype foundation" title={pageTitle} description="Choose a workspace area from the navigation to continue." />;
 
-  return (
-    <TransactionProvider>
-      <PortalShell route={route} role={role} accountId={accountId} onRouteChange={setRoute} onRoleChange={setRole} onAccountChange={setAccountId}>{content}</PortalShell>
-    </TransactionProvider>
-  );
+  return <PortalShell route={route} role={role} accountId={accountId} onRouteChange={setRoute} onRoleChange={setRole} onAccountChange={setAccountId}>{content}</PortalShell>;
 }
 
 function App() {
-  return <SupportProvider><PortalApp /></SupportProvider>;
+  return <ActionFeedbackProvider><SupportProvider><ProjectProvider><TransactionProvider><PortalApp /></TransactionProvider></ProjectProvider></SupportProvider></ActionFeedbackProvider>;
 }
 
 export default App;

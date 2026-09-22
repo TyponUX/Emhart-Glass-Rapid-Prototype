@@ -4,25 +4,33 @@ import {
   GraduationCap,
   Send,
 } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { machines, trainingOfferings } from "@/data/portal-data";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { trainingOfferings } from "@/data/portal-data";
 
-export function Training({ accountId }: { accountId: string }) {
+export function Training({ accountId: _accountId }: { accountId: string }) {
   const [requestedIds, setRequestedIds] = useState<string[]>([]);
-  const accountMachineIds = machines
-    .filter((machine) => machine.accountId === accountId)
-    .map((machine) => machine.id);
-  const offerings = trainingOfferings.filter(
-    (offering) =>
-      offering.compatibleMachineIds.length === 0 ||
-      offering.compatibleMachineIds.some((machineId) =>
-        accountMachineIds.includes(machineId),
-      ),
-  );
+  const [topicFilter, setTopicFilter] = useState("all");
+  const [locationFilter, setLocationFilter] = useState("all");
+  const [dateSort, setDateSort] = useState<"upcoming" | "latest">("upcoming");
+  const topics = [...new Set(trainingOfferings.map((offering) => offering.topic))];
+  const locations = [...new Set(trainingOfferings.map((offering) => offering.location))];
+  const offerings = useMemo(() => trainingOfferings
+    .filter((offering) => topicFilter === "all" || offering.topic === topicFilter)
+    .filter((offering) => locationFilter === "all" || offering.location === locationFilter)
+    .sort((first, second) => {
+      const difference = new Date(first.date).getTime() - new Date(second.date).getTime();
+      return dateSort === "upcoming" ? difference : -difference;
+    }), [dateSort, locationFilter, topicFilter]);
+
+  function formatDate(date: string) {
+    return new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "long", year: "numeric" }).format(new Date(date));
+  }
 
   function requestTraining(id: string) {
     setRequestedIds((current) =>
@@ -65,11 +73,34 @@ export function Training({ accountId }: { accountId: string }) {
           </CardContent>
         </Card>
       </div>
+      <Card className="bg-action-panel-color">
+        <CardHeader><CardTitle className="text-base">Find a training course</CardTitle></CardHeader>
+        <CardContent className="grid gap-4 md:grid-cols-3">
+          <div className="space-y-2">
+            <Label htmlFor="training-topic">Topic</Label>
+            <Select value={topicFilter} onValueChange={setTopicFilter}>
+              <SelectTrigger id="training-topic"><SelectValue /></SelectTrigger>
+              <SelectContent><SelectItem value="all">All topics</SelectItem>{topics.map((topic) => <SelectItem key={topic} value={topic}>{topic}</SelectItem>)}</SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="training-location">Location</Label>
+            <Select value={locationFilter} onValueChange={setLocationFilter}>
+              <SelectTrigger id="training-location"><SelectValue /></SelectTrigger>
+              <SelectContent><SelectItem value="all">All locations</SelectItem>{locations.map((location) => <SelectItem key={location} value={location}>{location}</SelectItem>)}</SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="training-date-sort">Date</Label>
+            <Select value={dateSort} onValueChange={(value) => setDateSort(value as "upcoming" | "latest")}>
+              <SelectTrigger id="training-date-sort"><SelectValue /></SelectTrigger>
+              <SelectContent><SelectItem value="upcoming">Soonest first</SelectItem><SelectItem value="latest">Latest first</SelectItem></SelectContent>
+            </Select>
+          </div>
+        </CardContent>
+      </Card>
       <div className="grid gap-5 lg:grid-cols-2">
         {offerings.map((offering) => {
-          const relatedMachines = machines.filter((machine) =>
-            offering.compatibleMachineIds.includes(machine.id),
-          );
           const requested = requestedIds.includes(offering.id);
           return (
             <Card key={offering.id} className="flex flex-col">
@@ -95,6 +126,18 @@ export function Training({ accountId }: { accountId: string }) {
                 </p>
                 <dl className="grid gap-3 text-sm">
                   <div>
+                    <dt className="text-muted-foreground">Topic</dt>
+                    <dd className="font-medium">{offering.topic}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-muted-foreground">Date</dt>
+                    <dd className="font-medium">{formatDate(offering.date)}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-muted-foreground">Location</dt>
+                    <dd className="font-medium">{offering.location}</dd>
+                  </div>
+                  <div>
                     <dt className="text-muted-foreground">Audience</dt>
                     <dd className="font-medium">{offering.audience}</dd>
                   </div>
@@ -103,16 +146,8 @@ export function Training({ accountId }: { accountId: string }) {
                     <dd className="font-medium">{offering.format}</dd>
                   </div>
                   <div>
-                    <dt className="text-muted-foreground">
-                      Equipment relevance
-                    </dt>
-                    <dd className="font-medium">
-                      {relatedMachines.length > 0
-                        ? relatedMachines
-                            .map((machine) => machine.name)
-                            .join(", ")
-                        : "No equipment relevance defined yet"}
-                    </dd>
+                    <dt className="text-muted-foreground">Equipment relevance</dt>
+                    <dd className="font-medium">Catalogue course</dd>
                   </div>
                 </dl>
                 <div className="mt-auto pt-2">

@@ -1,6 +1,6 @@
           <h1 className="text-3xl font-semibold tracking-tight">Equipment support</h1>
 import { useEffect, useMemo, useState } from "react";
-import { CheckCircle2, CircleAlert, FilePlus2, LifeBuoy, MessageSquare, Paperclip, Plus, RotateCcw, Send } from "lucide-react";
+import { CheckCircle2, CircleAlert, FilePlus2, LifeBuoy, MessageSquare, Paperclip, Plus, RotateCcw, Send, Star } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -49,9 +49,6 @@ export function SupportCenter({ accountId, role }: { accountId: string; role: Po
     submitRequest,
     addAttachment,
     addMessage,
-    startReview,
-    requestCustomerInfo,
-    resolveRequest,
     confirmResolved,
     reopenRequest,
     submitFeedback,
@@ -72,10 +69,9 @@ export function SupportCenter({ accountId, role }: { accountId: string; role: Po
   const [priorityFilter, setPriorityFilter] = useState("all");
   const [dateFilter, setDateFilter] = useState("all");
   const [reply, setReply] = useState("");
-  const [supportReply, setSupportReply] = useState("Please share a close-up photo and confirm whether the issue occurs on every section.");
-  const [resolution, setResolution] = useState({ summary: "Alignment restored and verified during production start-up.", rootCause: "Worn mounting set caused excess play.", actionsTaken: "Replaced the mounting set and adjusted the baffle arm.", followUp: "Recheck alignment after 500 operating hours." });
   const [reopenNote, setReopenNote] = useState("The issue returned during the next production start-up.");
   const [feedback, setFeedback] = useState("");
+  const [feedbackRating, setFeedbackRating] = useState(0);
 
   useEffect(() => {
     if (!draftContext) return;
@@ -223,10 +219,9 @@ export function SupportCenter({ accountId, role }: { accountId: string; role: Po
                 </div>
 
                 {selectedRequest.status === "draft" && <div className="rounded-md border border-dashed p-4"><p className="mb-3 text-sm text-muted-foreground">Review the request details, then send this case to Emhart Glass.</p><Button onClick={() => submitRequest(selectedRequest.id)}>Submit support request</Button></div>}
-                {selectedRequest.status === "submitted" && <div className="rounded-md border border-dashed p-4"><p className="mb-3 text-sm text-muted-foreground">The request is waiting for initial triage.</p><Button onClick={() => startReview(selectedRequest.id)}>Simulate Emhart triage</Button></div>}
-                {(selectedRequest.status === "under-review" || selectedRequest.status === "in-progress") && <div className="space-y-3 rounded-md border border-dashed p-4"><p className="text-sm font-medium">Emhart Glass actions</p><Textarea value={supportReply} onChange={(event) => setSupportReply(event.target.value)} /><div className="flex flex-wrap gap-2"><Button size="sm" variant="outline" onClick={() => requestCustomerInfo(selectedRequest.id, supportReply)} disabled={!supportReply.trim()}>Request customer information</Button><Button size="sm" onClick={() => resolveRequest(selectedRequest.id, resolution)} disabled={!resolution.summary.trim()}>Record resolution</Button></div><details><summary className="cursor-pointer text-sm text-muted-foreground">Edit resolution details</summary><div className="mt-3 grid gap-2 sm:grid-cols-2"><Input value={resolution.summary} onChange={(event) => setResolution((current) => ({ ...current, summary: event.target.value }))} aria-label="Resolution summary" placeholder="Resolution summary" /><Input value={resolution.rootCause} onChange={(event) => setResolution((current) => ({ ...current, rootCause: event.target.value }))} aria-label="Root cause" placeholder="Root cause" /><Input value={resolution.actionsTaken} onChange={(event) => setResolution((current) => ({ ...current, actionsTaken: event.target.value }))} aria-label="Actions taken" placeholder="Actions taken" /><Input value={resolution.followUp} onChange={(event) => setResolution((current) => ({ ...current, followUp: event.target.value }))} aria-label="Follow-up" placeholder="Follow-up recommendation" /></div></details></div>}
+                {selectedRequest.status === "submitted" && <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">Your request has been sent and is waiting for Emhart Glass review.</p>}
                 {selectedRequest.status === "resolved" && <div className="space-y-3 rounded-md border border-border bg-green-50 p-4"><div><p className="text-sm font-medium">Resolution proposed</p><p className="text-sm text-green-900">{selectedRequest.resolutionSummary}</p><p className="mt-1 text-xs text-green-800">Root cause: {selectedRequest.rootCause}</p></div><Textarea value={reopenNote} onChange={(event) => setReopenNote(event.target.value)} aria-label="Reopen note" /><div className="flex flex-wrap gap-2"><Button onClick={() => confirmResolved(selectedRequest.id)}><CheckCircle2 className="mr-2 size-4" />Confirm resolved</Button><Button variant="outline" onClick={() => reopenRequest(selectedRequest.id, reopenNote)}><RotateCcw className="mr-2 size-4" />Issue persists</Button></div></div>}
-                {selectedRequest.status === "closed" && <div className="space-y-2 border-t pt-4"><Label htmlFor="support-feedback">Optional feedback</Label><Textarea id="support-feedback" value={feedback} onChange={(event) => setFeedback(event.target.value)} placeholder="How was your support experience?" /><Button variant="outline" onClick={() => submitFeedback(selectedRequest.id, feedback)} disabled={!feedback.trim()}>Submit feedback</Button>{selectedRequest.feedback && <p className="text-sm text-green-700">Feedback recorded.</p>}</div>}
+                {selectedRequest.status === "closed" && <div className="space-y-3 border-t pt-4"><Label>Rate your support experience</Label><div className="flex items-center gap-1" role="radiogroup" aria-label="Support rating">{[1, 2, 3, 4, 5].map((rating) => <button key={rating} type="button" disabled={Boolean(selectedRequest.feedback)} aria-label={`${rating} star${rating === 1 ? "" : "s"}`} aria-pressed={feedbackRating === rating} onClick={() => setFeedbackRating(rating)}><Star className={`size-6 ${feedbackRating >= rating ? "fill-yellow-400 text-yellow-500" : "text-muted-foreground"}`} /></button>)}</div><Label htmlFor="support-feedback">Optional feedback</Label><Textarea id="support-feedback" value={feedback} disabled={Boolean(selectedRequest.feedback)} onChange={(event) => setFeedback(event.target.value)} placeholder="How was your support experience?" /><Button variant="outline" onClick={() => submitFeedback(selectedRequest.id, feedback, feedbackRating)} disabled={Boolean(selectedRequest.feedback) || feedbackRating === 0}>Submit feedback</Button>{selectedRequest.feedback && <p className="text-sm text-green-700">Feedback recorded: {selectedRequest.feedbackRating ?? feedbackRating}/5</p>}</div>}
                 {selectedRequest.status !== "closed" && <div className="space-y-2 border-t pt-4"><Textarea value={reply} onChange={(event) => setReply(event.target.value)} placeholder="Reply to this request..." /><div className="flex gap-2"><Button onClick={sendCustomerReply} disabled={!reply.trim()}><Send className="mr-2 size-4" />Send reply</Button><Button variant="outline" onClick={() => addAttachment(selectedRequest.id, { name: `customer-attachment-${selectedRequest.attachments.length + 1}.pdf`, type: "PDF" })}><Paperclip className="size-4" /></Button></div></div>}
               </CardContent>
             </Card>
