@@ -14,6 +14,10 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { parts, services, type LineItem } from "@/data/portal-data";
 import {
@@ -105,13 +109,15 @@ function ItemRow({
 }
 
 export function QuoteOrder({
+  view,
   initialQuoteId,
   initialOrderId,
-  onOrderPlaced,
+  onNavigate,
 }: {
+  view: "cart" | "quotes" | "orders";
   initialQuoteId?: string;
   initialOrderId?: string;
-  onOrderPlaced?: (quoteId: string, orderId: string) => void;
+  onNavigate: (route: "quotes" | "orders", id?: string) => void;
 }) {
   const {
     cart,
@@ -126,21 +132,36 @@ export function QuoteOrder({
     advanceOrder,
     advanceShipment,
     confirmReceipt,
+    notificationSubscriptions,
+    setNotificationSubscription,
   } = useTransaction();
   const { showFeedback } = useActionFeedback();
-  const [tab, setTab] = useState<HubTab>("cart");
+  const [tab, setTab] = useState<HubTab>(view === "cart" ? "cart" : view === "quotes" ? "quotes" : "orders");
   const [selectedQuoteId, setSelectedQuoteId] = useState<string | undefined>();
   const [selectedOrderId, setSelectedOrderId] = useState<string | undefined>();
+  const [quoteSearch, setQuoteSearch] = useState("");
+  const [quoteStatusFilter, setQuoteStatusFilter] = useState<"all" | QuoteEntry["status"]>("all");
+  const [orderSearch, setOrderSearch] = useState("");
+  const [orderStatusFilter, setOrderStatusFilter] = useState<"all" | OrderEntry["status"]>("all");
   const [clarificationNote, setClarificationNote] = useState(
     "Please confirm the mounting part revision and final delivery window.",
   );
 
-  const visibleQuotes = quotes.filter((quote) => quote.status !== "ordered");
+  const visibleQuotes = quotes.filter((quote) => {
+    const query = quoteSearch.trim().toLowerCase();
+    const matchesSearch = !query || [quote.number, quote.requestNumber, quote.packageName ?? ""].some((value) => value.toLowerCase().includes(query));
+    return matchesSearch && (quoteStatusFilter === "all" || quote.status === quoteStatusFilter);
+  });
   const selectedQuote =
     visibleQuotes.find((quote) => quote.id === selectedQuoteId) ??
     visibleQuotes[0];
-  const orderList = orders.filter((order) => !order.shipmentStarted);
-  const shipmentList = orders.filter((order) => order.shipmentStarted);
+  const matchingOrders = orders.filter((order) => {
+    const query = orderSearch.trim().toLowerCase();
+    const matchesSearch = !query || [order.number, order.quoteNumber].some((value) => value.toLowerCase().includes(query));
+    return matchesSearch && (orderStatusFilter === "all" || order.status === orderStatusFilter);
+  });
+  const orderList = matchingOrders.filter((order) => !order.shipmentStarted);
+  const shipmentList = matchingOrders.filter((order) => order.shipmentStarted);
   const selectedOrder =
     orders.find((order) => order.id === selectedOrderId) ?? orderList[0] ?? shipmentList[0];
   const cartReady =
@@ -148,9 +169,12 @@ export function QuoteOrder({
     cart.every((item) => item.compatibility === "compatible");
 
   useEffect(() => {
+    setTab(view === "cart" ? "cart" : view === "quotes" ? "quotes" : "orders");
+  }, [view]);
+
+  useEffect(() => {
     if (initialQuoteId) {
       setSelectedQuoteId(initialQuoteId);
-      setTab("quotes");
     }
   }, [initialQuoteId]);
 
@@ -164,8 +188,7 @@ export function QuoteOrder({
   function handleSubmit() {
     const quoteId = submitCart();
     if (quoteId) {
-      setSelectedQuoteId(quoteId);
-      setTab("quotes");
+      onNavigate("quotes", quoteId);
     }
   }
 
@@ -173,8 +196,7 @@ export function QuoteOrder({
     const orderId = approveQuote(quoteId);
     if (orderId) {
       setSelectedOrderId(orderId);
-      onOrderPlaced?.(quoteId, orderId);
-      setTab("orders");
+      onNavigate("orders", orderId);
     }
   }
 
@@ -199,33 +221,19 @@ export function QuoteOrder({
     label: string;
     icon: typeof ShoppingCart;
     count: number;
-  }> = [
-    { key: "cart", label: "Cart", icon: ShoppingCart, count: cart.length },
-    {
-      key: "quotes",
-      label: "Quotes",
-      icon: ClipboardList,
-      count: visibleQuotes.length,
-    },
+  }> = view === "orders" ? [
     { key: "orders", label: "Orders", icon: Truck, count: orderList.length },
-    {
-      key: "shipment",
-      label: "Shipment",
-      icon: Waypoints,
-      count: shipmentList.length,
-    },
-  ];
+    { key: "shipment", label: "Shipment", icon: Waypoints, count: shipmentList.length },
+  ] : [];
 
   return (
     <section className="space-y-6">
       <div className="space-y-2">
-        <h1 className="text-3xl font-semibold tracking-tight">
-          Commercial hub
-        </h1>
+        <h1 className="text-3xl font-semibold tracking-tight">{view === "cart" ? "Cart" : view === "quotes" ? "Quotes" : "Orders & Shipment"}</h1>
         <p className="max-w-2xl text-muted-foreground"></p>
       </div>
 
-      <div className="flex flex-wrap gap-2 border-b pb-3">
+      {view === "orders" && <div className="flex flex-wrap gap-2 border-b pb-3">
         {tabs.map(({ key, label, icon: Icon, count }) => (
           <Button
             key={key}
@@ -242,9 +250,9 @@ export function QuoteOrder({
             )}
           </Button>
         ))}
-      </div>
+      </div>}
 
-      {tab === "cart" && (
+      {view === "cart" && tab === "cart" && (
         <div className="grid gap-6 lg:grid-cols-[1.6fr_0.9fr]">
           <Card className="bg-action-panel-color">
             <CardHeader>
@@ -253,8 +261,8 @@ export function QuoteOrder({
             <CardContent className="space-y-3">
               {cart.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
-                  The cart is empty. Add parts from My Equipment or Products &
-                  Services to start a quote request.
+                  The cart is empty. Add parts from My Equipment or Products to
+                  start a quote request.
                 </p>
               ) : (
                 cart.map((item) => (
@@ -306,13 +314,27 @@ export function QuoteOrder({
         </div>
       )}
 
-      {tab === "quotes" && (
+      {view === "quotes" && tab === "quotes" && (
         <div className="grid gap-6 lg:grid-cols-[0.9fr_1.6fr]">
           <Card>
             <CardHeader>
               <CardTitle className="text-base">Quotes</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-2">
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="quote-search">Search quotes</Label>
+                <Input id="quote-search" placeholder="Quote or request number" value={quoteSearch} onChange={(event) => setQuoteSearch(event.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="quote-status-filter">Status</Label>
+                <Select value={quoteStatusFilter} onValueChange={(value) => setQuoteStatusFilter(value as "all" | QuoteEntry["status"])}>
+                  <SelectTrigger id="quote-status-filter"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All statuses</SelectItem>
+                    {(Object.keys(QUOTE_STATUS_LABEL) as QuoteEntry["status"][]).map((status) => <SelectItem key={status} value={status}>{QUOTE_STATUS_LABEL[status]}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
               {visibleQuotes.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
                   No quotes yet. Submit a request from the cart.
@@ -392,6 +414,22 @@ export function QuoteOrder({
                   ))}
                 </div>
 
+                <section className="space-y-2 border-t pt-4">
+                  <h3 className="text-sm font-semibold">Documents</h3>
+                  <p className="text-sm text-muted-foreground">No documents are attached to this quote.</p>
+                </section>
+
+                <section className="space-y-2 border-t pt-4">
+                  <h3 className="text-sm font-semibold">Requests</h3>
+                  <p className="text-sm text-muted-foreground">Request {selectedQuote.requestNumber}</p>
+                  {selectedQuote.clarificationNotes.length > 0 ? selectedQuote.clarificationNotes.map((note, index) => <p key={`${selectedQuote.id}-request-${index}`} className="border p-3 text-sm">{note}</p>) : <p className="text-sm text-muted-foreground">No additional requests.</p>}
+                </section>
+
+                <section className="flex items-start gap-3 border-t pt-4">
+                  <Checkbox id={`quote-notifications-${selectedQuote.id}`} checked={notificationSubscriptions[`quote:${selectedQuote.id}`] ?? false} onCheckedChange={(checked) => setNotificationSubscription(`quote:${selectedQuote.id}`, checked === true)} />
+                  <Label htmlFor={`quote-notifications-${selectedQuote.id}`} className="text-sm">Subscribe to quote notifications</Label>
+                </section>
+
                 {selectedQuote.status === "requested" && (
                   <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
                     Emhart Glass is preparing your quotation. This updates
@@ -450,8 +488,7 @@ export function QuoteOrder({
                       variant="outline"
                       size="sm"
                       onClick={() => {
-                        setSelectedOrderId(selectedQuote.orderId);
-                        setTab("orders");
+                        onNavigate("orders", selectedQuote.orderId);
                       }}
                     >
                       View order
@@ -472,13 +509,27 @@ export function QuoteOrder({
         </div>
       )}
 
-      {tab === "orders" && (
+      {view === "orders" && tab === "orders" && (
         <div className="grid gap-6 lg:grid-cols-[0.9fr_1.6fr]">
           <Card>
             <CardHeader>
               <CardTitle className="text-base">Orders</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-2">
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="order-search">Search orders</Label>
+                <Input id="order-search" placeholder="Order or quote number" value={orderSearch} onChange={(event) => setOrderSearch(event.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="order-status-filter">Status</Label>
+                <Select value={orderStatusFilter} onValueChange={(value) => setOrderStatusFilter(value as "all" | OrderEntry["status"])}>
+                  <SelectTrigger id="order-status-filter"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All statuses</SelectItem>
+                    {(Object.keys(ORDER_STATUS_LABEL) as OrderEntry["status"][]).map((status) => <SelectItem key={status} value={status}>{ORDER_STATUS_LABEL[status]}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
               {orderList.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
                   No orders yet. Approve a quote to place an order.
@@ -554,6 +605,22 @@ export function QuoteOrder({
                   )}
                   {selectedOrder.status === "in-progress" && <p className="text-xs text-muted-foreground">Order preparation is complete. Continue in Shipment when fulfilment begins.</p>}
                 </div>
+
+                <section className="space-y-2 border-t pt-4">
+                  <h3 className="text-sm font-semibold">Documents</h3>
+                  <p className="text-sm text-muted-foreground">No documents are attached to this order.</p>
+                </section>
+
+                <section className="space-y-2 border-t pt-4">
+                  <h3 className="text-sm font-semibold">Requests</h3>
+                  <p className="text-sm text-muted-foreground">Linked quote: {selectedOrder.quoteNumber}</p>
+                  <p className="text-sm text-muted-foreground">No additional order requests.</p>
+                </section>
+
+                <section className="flex items-start gap-3 border-t pt-4">
+                  <Checkbox id={`order-notifications-${selectedOrder.id}`} checked={notificationSubscriptions[`order:${selectedOrder.id}`] ?? false} onCheckedChange={(checked) => setNotificationSubscription(`order:${selectedOrder.id}`, checked === true)} />
+                  <Label htmlFor={`order-notifications-${selectedOrder.id}`} className="text-sm">Subscribe to order and shipment notifications</Label>
+                </section>
               </CardContent>
             </Card>
           ) : (
@@ -568,13 +635,27 @@ export function QuoteOrder({
         </div>
       )}
 
-      {tab === "shipment" && (
+      {view === "orders" && tab === "shipment" && (
         <div className="grid gap-6 lg:grid-cols-[0.9fr_1.6fr]">
           <Card>
             <CardHeader>
               <CardTitle className="text-base">Shipment</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-2">
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="shipment-search">Search shipments</Label>
+                <Input id="shipment-search" placeholder="Order or quote number" value={orderSearch} onChange={(event) => setOrderSearch(event.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="shipment-status-filter">Status</Label>
+                <Select value={orderStatusFilter} onValueChange={(value) => setOrderStatusFilter(value as "all" | OrderEntry["status"])}>
+                  <SelectTrigger id="shipment-status-filter"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All statuses</SelectItem>
+                    {(Object.keys(ORDER_STATUS_LABEL) as OrderEntry["status"][]).map((status) => <SelectItem key={status} value={status}>{ORDER_STATUS_LABEL[status]}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
               {shipmentList.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
                   No shipments yet. Orders appear here once fulfilment begins.
@@ -674,6 +755,13 @@ export function QuoteOrder({
                     </Button>
                   )}
                 </div>
+
+                <section className="space-y-2 border-t pt-4">
+                  <h3 className="text-sm font-semibold">Proof of delivery</h3>
+                  {selectedOrder.status === "complete" ? (
+                    <div className="border p-3 text-sm"><p className="font-medium">Receipt confirmed</p><p className="text-muted-foreground">POD-{selectedOrder.number} · {selectedOrder.milestones.find((milestone) => milestone.key === "received")?.date}</p></div>
+                  ) : <p className="text-sm text-muted-foreground">Proof of delivery will be available after receipt is confirmed.</p>}
+                </section>
               </CardContent>
             </Card>
           ) : (

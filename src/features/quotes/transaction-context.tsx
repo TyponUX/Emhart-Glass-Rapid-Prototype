@@ -76,6 +76,8 @@ interface TransactionContextValue {
   confirmReceipt: (orderId: string) => void;
   createQuoteFromProjectItems: (items: ProjectItem[], equipmentId: string, packageName?: string) => { id: string; number: string } | undefined;
   notifications: TransactionNotification[];
+  notificationSubscriptions: Record<string, boolean>;
+  setNotificationSubscription: (key: string, enabled: boolean) => void;
 }
 
 const SHIPMENT_SEQUENCE: ShipmentMilestoneKey[] = [
@@ -169,6 +171,7 @@ export function TransactionProvider({ children }: { children: ReactNode }) {
   const [quotes, setQuotes] = useState<QuoteEntry[]>([]);
   const [orders, setOrders] = useState<OrderEntry[]>([]);
   const [notifications, setNotifications] = useState<TransactionNotification[]>([]);
+  const [notificationSubscriptions, setNotificationSubscriptions] = useState<Record<string, boolean>>({});
   const counterRef = useRef(147);
   const orderCounterRef = useRef(91);
   const timersRef = useRef<number[]>([]);
@@ -332,6 +335,10 @@ export function TransactionProvider({ children }: { children: ReactNode }) {
     if (order) setNotifications((current) => [{ id: `shipment-${Date.now()}`, title: `Shipment update · ${order.number}`, message: "Shipment status changed to Received.", createdAt: formatDate(new Date()), read: false }, ...current]);
   }, [orders]);
 
+  const setNotificationSubscription = useCallback((key: string, enabled: boolean) => {
+    setNotificationSubscriptions((current) => ({ ...current, [key]: enabled }));
+  }, []);
+
   const value = useMemo<TransactionContextValue>(() => ({
     cart,
     quotes,
@@ -349,7 +356,9 @@ export function TransactionProvider({ children }: { children: ReactNode }) {
     confirmReceipt,
     createQuoteFromProjectItems,
     notifications,
-  }), [cart, quotes, orders, cartTotal, addToCart, removeFromCart, clearCart, submitCart, requestClarification, approveQuote, advanceShipment, advanceOrder, confirmReceipt, createQuoteFromProjectItems, notifications]);
+    notificationSubscriptions,
+    setNotificationSubscription,
+  }), [cart, quotes, orders, cartTotal, addToCart, removeFromCart, clearCart, submitCart, requestClarification, approveQuote, advanceShipment, advanceOrder, confirmReceipt, createQuoteFromProjectItems, notifications, notificationSubscriptions, setNotificationSubscription]);
 
   return <TransactionContext.Provider value={value}>{children}</TransactionContext.Provider>;
 }
