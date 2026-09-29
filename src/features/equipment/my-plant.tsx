@@ -8,7 +8,6 @@ import { Input } from "@/components/ui/input";
 import { EquipmentImagePlaceholder } from "@/components/shared/equipment-image-placeholder";
 import { plants, type FurnaceRecord, type PlantEquipmentRecord, type PlantRecord, type ProductionLineRecord } from "@/data/plant-hierarchy";
 import { assemblies, machines, parts } from "@/data/portal-data";
-import { MachineExplorer } from "@/features/equipment/machine-explorer";
 import type { AssemblyRecord, PartRecord } from "@/data/portal-data";
 import { useTransaction } from "@/features/quotes/transaction-context";
 import { useActionFeedback } from "@/components/shared/action-feedback";
@@ -209,8 +208,8 @@ function PlantTreeDetails({ node, onAddPart, onRequestSupport }: {
         {node.kind === "furnace" && <dl className="grid grid-cols-2 gap-3 text-sm"><div><dt className="text-muted-foreground">Plant</dt><dd className="font-medium">{plant?.name}</dd></div><div><dt className="text-muted-foreground">Lines</dt><dd className="font-medium">{furnace?.lines.length ?? 0}</dd></div></dl>}
         {node.kind === "line" && <dl className="grid grid-cols-2 gap-3 text-sm"><div><dt className="text-muted-foreground">Furnace</dt><dd className="font-medium">{furnace?.name}</dd></div><div><dt className="text-muted-foreground">Machines</dt><dd className="font-medium">{line?.equipment.filter((item) => item.equipmentType === "Machine").length ?? 0}</dd></div><div><dt className="text-muted-foreground">Other equipment</dt><dd className="font-medium">{line?.equipment.filter((item) => item.equipmentType !== "Machine").length ?? 0}</dd></div></dl>}
         {equipment && <dl className="grid grid-cols-2 gap-3 text-sm">{[["Object ID", equipment.objectId], ["Equipment type", equipment.equipmentType], ["Serial number", equipment.serialNumber], ["Manufactured date", equipment.manufacturedDate], ["Installation date", equipment.installationDate]].map(([label, value]) => <div key={label}><dt className="text-muted-foreground">{label}</dt><dd className="font-medium">{value}</dd></div>)}</dl>}
-        {machine && <><p className="text-sm text-muted-foreground">{machine.configuration}</p><p className="text-sm">{machine.model} · {machine.serialNumber}</p></>}
-        {assembly && <><p className="text-sm text-muted-foreground">{assembly.description}</p><dl className="grid grid-cols-2 gap-3 text-sm"><div><dt className="text-muted-foreground">Level</dt><dd className="font-medium">{assembly.level ?? "Assembly"}</dd></div>{[["Equipment type", assembly.equipmentType], ["Object ID", assembly.objectId], ["Serial number", assembly.serialNumber], ["Manufactured date", assembly.manufacturedDate]].filter(([, value]) => value).map(([label, value]) => <div key={label}><dt className="text-muted-foreground">{label}</dt><dd className="font-medium">{value}</dd></div>)}</dl></>}
+        {machine && <p className="text-sm">{machine.model} · {machine.serialNumber}</p>}
+        {assembly && <><p className="text-sm text-muted-foreground">{assembly.description}</p><dl className="grid grid-cols-2 gap-3 text-sm">{[["Equipment type", assembly.equipmentType], ["Object ID", assembly.objectId], ["Serial number", assembly.serialNumber], ["Manufactured date", assembly.manufacturedDate]].filter(([, value]) => value).map(([label, value]) => <div key={label}><dt className="text-muted-foreground">{label}</dt><dd className="font-medium">{value}</dd></div>)}</dl></>}
         {part && <><div className="aspect-[16/9] overflow-hidden border bg-muted"><img src={part.imageUrl} alt={part.name} className="h-full w-full object-contain" /></div><p className="text-sm text-muted-foreground">Part number</p><p className="font-semibold">{part.partNumber}</p><p className="text-sm text-muted-foreground">{part.description}</p><div className="flex flex-wrap gap-2"><Badge variant="secondary">{part.availability}</Badge><Badge variant="outline">Lead time: {part.leadTime}</Badge></div><div className="flex flex-wrap gap-2"><Button onClick={() => onAddPart(node)}><ShoppingCart className="mr-2 size-4" />Add to cart</Button><Button variant="outline" onClick={() => supportMachineId && onRequestSupport({ site: supportSite, machineId: supportMachineId, assemblyId: node.assemblyId, partId: part.id })}>Request support</Button></div></>}
         {supportMachineId && !part && <Button variant="outline" onClick={() => onRequestSupport({ site: supportSite, machineId: supportMachineId, assemblyId: node.assemblyId })}>Request support</Button>}
       </CardContent>
@@ -264,17 +263,24 @@ export function MyPlant({ accountId, onRequestSupport }: MyPlantProps) {
   const [selectedFurnaceId, setSelectedFurnaceId] = useState<string>();
   const [selectedLineId, setSelectedLineId] = useState<string>();
   const [selectedMachineId, setSelectedMachineId] = useState<string>();
+  const [selectedMachineAssemblyId, setSelectedMachineAssemblyId] = useState<string>();
   const [selectedEquipmentId, setSelectedEquipmentId] = useState<string>();
   const tenantPlants = plants.filter((plant) => plant.accountId === accountId);
   const selectedPlant = tenantPlants.find((plant) => plant.id === selectedPlantId);
   const selectedFurnace = selectedPlant?.furnaces.find((furnace) => furnace.id === selectedFurnaceId);
   const selectedLine = selectedFurnace?.lines.find((line) => line.id === selectedLineId);
-  const selectedEquipment = selectedLine?.equipment.find((equipment) => equipment.id === selectedEquipmentId);
   const lineMachines = selectedLine?.equipment.filter((equipment) => equipment.equipmentType === "Machine") ?? [];
-  const otherLineEquipment = selectedLine?.equipment.filter((equipment) => equipment.equipmentType !== "Machine") ?? [];
   const treeNodes = filterTree(buildPlantTree(tenantPlants), treeQuery.trim().toLowerCase());
   const allTreeNodes = buildPlantTree(tenantPlants);
   const selectedTreeNode = activeTreeNodeId ? findTreeNode(allTreeNodes, activeTreeNodeId) : undefined;
+  const selectedMachineNode = selectedMachineId
+    ? allTreeNodes.flatMap((plant) => plant.children)
+      .flatMap((furnace) => furnace.children)
+      .flatMap((line) => line.children)
+      .find((node) => node.kind === "machine" && node.machineId === selectedMachineId)
+    : undefined;
+  const selectedMachineAssemblyNode = selectedMachineNode?.children.find((node) => node.id === selectedMachineAssemblyId);
+  const selectedMachineRecord = selectedMachineId ? machines.find((machine) => machine.id === selectedMachineId) : undefined;
   const { addToCart } = useTransaction();
   const { showFeedback } = useActionFeedback();
 
@@ -327,25 +333,27 @@ export function MyPlant({ accountId, onRequestSupport }: MyPlantProps) {
     showFeedback({ itemName: part.name, destination: "cart" });
   }
 
-  const [initialExplorerAssemblyId, setInitialExplorerAssemblyId] = useState<string | undefined>();
-  const [initialExplorerPartId, setInitialExplorerPartId] = useState<string | undefined>();
-  const [explorerHierarchyContext, setExplorerHierarchyContext] = useState<string[]>([]);
-
   function openPlant(plant: PlantRecord) {
     setSelectedPlantId(plant.id);
     setSelectedFurnaceId(undefined);
     setSelectedLineId(undefined);
+    setSelectedMachineId(undefined);
+    setSelectedMachineAssemblyId(undefined);
     setSelectedEquipmentId(undefined);
   }
 
   function openFurnace(furnace: FurnaceRecord) {
     setSelectedFurnaceId(furnace.id);
     setSelectedLineId(undefined);
+    setSelectedMachineId(undefined);
+    setSelectedMachineAssemblyId(undefined);
     setSelectedEquipmentId(undefined);
   }
 
   function openLine(line: ProductionLineRecord) {
     setSelectedLineId(line.id);
+    setSelectedMachineId(undefined);
+    setSelectedMachineAssemblyId(undefined);
     setSelectedEquipmentId(undefined);
   }
 
@@ -353,22 +361,10 @@ export function MyPlant({ accountId, onRequestSupport }: MyPlantProps) {
     if (equipment.machineId) {
       setSelectedEquipmentId(undefined);
       setSelectedMachineId(equipment.machineId);
+      setSelectedMachineAssemblyId(undefined);
       return;
     }
     setSelectedEquipmentId(equipment.id);
-  }
-
-  if (selectedMachineId) {
-    return (
-      <MachineExplorer
-        machineId={selectedMachineId}
-        hierarchyContext={explorerHierarchyContext.length ? explorerHierarchyContext : [selectedPlant?.name, selectedFurnace?.name, selectedLine?.name].filter((value): value is string => Boolean(value))}
-        initialAssemblyId={initialExplorerAssemblyId}
-        initialPartId={initialExplorerPartId}
-        onBack={() => { setSelectedMachineId(undefined); setInitialExplorerAssemblyId(undefined); setInitialExplorerPartId(undefined); }}
-        onRequestSupport={onRequestSupport}
-      />
-    );
   }
 
   return (
@@ -397,18 +393,19 @@ export function MyPlant({ accountId, onRequestSupport }: MyPlantProps) {
         <PlantTreeDetails node={selectedTreeNode} onAddPart={addTreePartToCart} onRequestSupport={onRequestSupport} />
       </section>}
 
-      {viewMode === "tiles" && <nav aria-label="Plant hierarchy" className="flex items-center gap-2 border-b pb-3 text-sm">
-        <button className={!selectedPlant ? "font-semibold text-foreground" : "text-muted-foreground hover:text-foreground"} onClick={() => { setSelectedPlantId(undefined); setSelectedFurnaceId(undefined); setSelectedLineId(undefined); setSelectedEquipmentId(undefined); }}>My Plant</button>
-        {selectedPlant && <><span className="text-muted-foreground">/</span><button className={!selectedFurnace ? "font-semibold text-foreground" : "text-muted-foreground hover:text-foreground"} onClick={() => { setSelectedFurnaceId(undefined); setSelectedLineId(undefined); setSelectedEquipmentId(undefined); }}>{selectedPlant.name}</button></>}
-        {selectedFurnace && <><span className="text-muted-foreground">/</span><button className={!selectedLine ? "font-semibold text-foreground" : "text-muted-foreground hover:text-foreground"} onClick={() => { setSelectedLineId(undefined); setSelectedEquipmentId(undefined); }}>{selectedFurnace.name}</button></>}
-        {selectedLine && <><span className="text-muted-foreground">/</span><span className="font-semibold">{selectedLine.name}</span></>}
+      {viewMode === "tiles" && <nav aria-label="Plant hierarchy" className="sticky top-[5.05rem] z-20 flex items-center gap-2 border-b bg-background/95 py-2 text-sm backdrop-blur">
+        <button className={!selectedPlant ? "font-semibold text-foreground" : "text-muted-foreground hover:text-foreground"} onClick={() => { setSelectedPlantId(undefined); setSelectedFurnaceId(undefined); setSelectedLineId(undefined); setSelectedMachineId(undefined); setSelectedMachineAssemblyId(undefined); setSelectedEquipmentId(undefined); }}>My Plant</button>
+        {selectedPlant && <><span className="text-muted-foreground">/</span><button className={!selectedFurnace ? "font-semibold text-foreground" : "text-muted-foreground hover:text-foreground"} onClick={() => { setSelectedFurnaceId(undefined); setSelectedLineId(undefined); setSelectedMachineId(undefined); setSelectedMachineAssemblyId(undefined); setSelectedEquipmentId(undefined); }}>{selectedPlant.name}</button></>}
+        {selectedFurnace && <><span className="text-muted-foreground">/</span><button className={!selectedLine ? "font-semibold text-foreground" : "text-muted-foreground hover:text-foreground"} onClick={() => { setSelectedLineId(undefined); setSelectedMachineId(undefined); setSelectedMachineAssemblyId(undefined); setSelectedEquipmentId(undefined); }}>{selectedFurnace.name}</button></>}
+        {selectedLine && <><span className="text-muted-foreground">/</span><button className={!selectedMachineId ? "font-semibold text-foreground" : "text-muted-foreground hover:text-foreground"} onClick={() => { setSelectedMachineId(undefined); setSelectedMachineAssemblyId(undefined); }}>{selectedLine.name}</button></>}
+        {selectedMachineRecord && <><span className="text-muted-foreground">/</span><span className="font-semibold">{selectedMachineRecord.name}</span></>}
       </nav>}
 
       {viewMode === "tiles" && !selectedPlant && (
         <div className="space-y-4">
           <div><h2 className="text-lg font-semibold">Plants</h2><p className="text-sm text-muted-foreground">Select a plant to browse its furnaces and production lines.</p></div>
           <div className="grid gap-4 xl:grid-cols-3">
-            {tenantPlants.map((plant) => <Card key={plant.id} className="overflow-hidden"><div className="flex h-36 items-center justify-center border-b bg-muted/40"><Factory className="size-10 text-muted-foreground" /></div><CardContent className="space-y-4 p-5"><div><h3 className="font-semibold">{plant.name}</h3><p className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground"><MapPin className="size-3.5" />{plant.location}</p></div><div className="flex items-center justify-between"><Badge variant="outline">{plant.furnaces.length} furnaces</Badge><Button size="sm" onClick={() => openPlant(plant)}>Open plant<ArrowRight className="ml-2 size-4" /></Button></div></CardContent></Card>)}
+            {tenantPlants.map((plant) => <button type="button" key={plant.id} className="group overflow-hidden rounded border bg-card text-left transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => openPlant(plant)}><div className="flex h-36 items-center justify-center border-b bg-muted/40"><Factory className="size-10 text-muted-foreground" /></div><div className="space-y-4 p-5"><div><h3 className="font-semibold">{plant.name}</h3><p className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground"><MapPin className="size-3.5" />{plant.location}</p></div><div className="flex items-center justify-between"><Badge variant="outline">{plant.furnaces.length} furnaces</Badge><ArrowRight className="size-4 transition-transform group-hover:translate-x-1" /></div></div></button>)}
           </div>
         </div>
       )}
@@ -427,12 +424,53 @@ export function MyPlant({ accountId, onRequestSupport }: MyPlantProps) {
         </section>
       )}
 
-      {viewMode === "tiles" && selectedLine && (
+      {viewMode === "tiles" && selectedLine && !selectedMachineId && (
         <section className="space-y-4">
           <div><h2 className="text-lg font-semibold">Machines</h2><p className="text-sm text-muted-foreground">{selectedPlant?.name} · {selectedFurnace?.name} · {selectedLine.name}</p></div>
-          {lineMachines.length ? <div className="grid gap-4 xl:grid-cols-2">{lineMachines.map((machine) => <Card key={machine.id} className="overflow-hidden"><div className="grid gap-4 p-4 sm:grid-cols-[9rem_minmax(0,1fr)]"><EquipmentImagePlaceholder pictureNumber={machine.pictureNumber} description={machine.description} className="h-32 min-h-0" /><div className="flex min-w-0 flex-col justify-between gap-4"><div><p className="text-xs font-medium uppercase text-muted-foreground">Machine</p><h3 className="mt-1 font-semibold">{machine.description}</h3><p className="mt-1 text-sm text-muted-foreground">{machine.objectId} · {machine.serialNumber}</p></div><Button className="self-start" onClick={() => openEquipment(machine)}>Open machine<ArrowRight className="ml-2 size-4" /></Button></div></div></Card>)}</div> : <p className="border p-6 text-sm text-muted-foreground">No machines are listed for this line yet.</p>}
-          {otherLineEquipment.length > 0 && <section className="space-y-3 pt-4"><div><h3 className="font-semibold">Other line equipment</h3><p className="text-sm text-muted-foreground">Equipment installed on this line outside the machine hierarchy.</p></div><div className="overflow-x-auto border"><table className="w-full min-w-[1050px] border-collapse text-left text-sm"><thead className="bg-muted"><tr>{["Object ID", "Object Description", "Level", "Equipment Type", "Serial Number", "Manufactured Date", "Installation Date", "Picture"].map((heading) => <th key={heading} className="border-b px-3 py-2 font-semibold">{heading}</th>)}</tr></thead><tbody>{otherLineEquipment.map((equipment) => <tr key={equipment.id} className="border-b last:border-b-0 hover:bg-accent/50"><td className="whitespace-nowrap px-3 py-2 font-medium">{equipment.objectId}</td><td className="px-3 py-2">{equipment.description}</td><td className="px-3 py-2">{equipment.level}</td><td className="px-3 py-2">{equipment.equipmentType}</td><td className="whitespace-nowrap px-3 py-2">{equipment.serialNumber}</td><td className="whitespace-nowrap px-3 py-2">{equipment.manufacturedDate}</td><td className="whitespace-nowrap px-3 py-2">{equipment.installationDate}</td><td className="px-3 py-2"><EquipmentImagePlaceholder pictureNumber={equipment.pictureNumber} description={equipment.description} className="min-h-0 w-24 p-2" /></td></tr>)}</tbody></table></div></section>}
-          {selectedEquipment && <Card><CardHeader><CardTitle>{selectedEquipment.description}</CardTitle></CardHeader><CardContent className="grid gap-5 md:grid-cols-[12rem_1fr]"><EquipmentImagePlaceholder pictureNumber={selectedEquipment.pictureNumber} description={selectedEquipment.description} className="min-h-40" /><dl className="grid grid-cols-2 gap-4 text-sm">{[["Object ID", selectedEquipment.objectId], ["Equipment type", selectedEquipment.equipmentType], ["Serial number", selectedEquipment.serialNumber], ["Manufactured date", selectedEquipment.manufacturedDate], ["Installation date", selectedEquipment.installationDate]].map(([label, value]) => <div key={label}><dt className="text-muted-foreground">{label}</dt><dd className="font-medium">{value}</dd></div>)}</dl></CardContent></Card>}
+          {lineMachines.length ? <div className="grid gap-4 xl:grid-cols-2">{lineMachines.map((machine) => <button type="button" key={machine.id} className="overflow-hidden border bg-card text-left transition-colors hover:bg-accent/50" onClick={() => openEquipment(machine)}><div className="grid gap-4 p-4 sm:grid-cols-[9rem_minmax(0,1fr)]"><EquipmentImagePlaceholder pictureNumber={machine.pictureNumber} description={machine.description} className="order-1 h-32 min-h-0" /><div className="order-2 flex min-w-0 items-center justify-between gap-3"><div><p className="text-xs font-medium uppercase text-muted-foreground">Machine</p><h3 className="mt-1 font-semibold">{machine.description}</h3><p className="mt-1 text-sm text-muted-foreground">{machine.objectId} · {machine.serialNumber}</p></div><ArrowRight className="size-4 shrink-0" /></div></div></button>)}</div> : <p className="border p-6 text-sm text-muted-foreground">No machines are listed for this line yet.</p>}
+        </section>
+      )}
+
+      {viewMode === "tiles" && selectedLine && selectedMachineId && selectedMachineNode && (
+        <section className="space-y-5">
+          <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.5fr)_minmax(18rem,0.8fr)]">
+            <div className="space-y-5">
+              {groupTreeChildren(selectedMachineNode).map((group) => (
+                <section key={group.label} className="space-y-3">
+                  <div className="sticky top-[7.375rem] z-10 flex items-center justify-between border-b bg-background/95 py-2 backdrop-blur">
+                    <h3 className="font-semibold">{group.label}</h3>
+                    <span className="text-sm text-muted-foreground">{group.nodes.length}</span>
+                  </div>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    {group.nodes.map((node) => {
+                      const assembly = node.assemblyId ? assemblies.find((candidate) => candidate.id === node.assemblyId) : undefined;
+                      return (
+                        <button
+                          type="button"
+                          key={node.id}
+                          aria-pressed={selectedMachineAssemblyId === node.id}
+                          className={`flex min-w-0 items-center gap-4 border bg-card p-4 text-left transition-colors hover:bg-accent/50 ${selectedMachineAssemblyId === node.id ? "border-primary bg-accent" : ""}`}
+                          onClick={() => setSelectedMachineAssemblyId(node.id)}
+                        >
+                          {node.pictureNumber && <EquipmentImagePlaceholder pictureNumber={node.pictureNumber} description={node.label} className="h-20 w-28 min-h-0 shrink-0" />}
+                          <span className="min-w-0 flex-1">
+                            <span className="block font-medium">{node.label}</span>
+                            <span className="mt-1 block text-xs text-muted-foreground">{assembly?.objectId ?? "—"}</span>
+                            <span className="block text-xs text-muted-foreground">{assembly?.serialNumber ?? "—"}</span>
+                          </span>
+                          <ArrowRight className="size-4 shrink-0" />
+                        </button>
+                      );
+                    })}
+                  </div>
+                </section>
+              ))}
+              {!selectedMachineNode.children.length && <p className="border p-6 text-sm text-muted-foreground">No section frames or mechanisms are listed for this machine.</p>}
+            </div>
+            <div className="xl:sticky xl:top-32 xl:max-h-[calc(100vh-9rem)] xl:self-start xl:overflow-y-auto">
+              <PlantTreeDetails node={selectedMachineAssemblyNode ?? selectedMachineNode} onAddPart={addTreePartToCart} onRequestSupport={onRequestSupport} />
+            </div>
+          </div>
         </section>
       )}
     </section>

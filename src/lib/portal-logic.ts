@@ -17,6 +17,7 @@ export interface EquipmentTreeNode {
   label: string;
   type: "machine" | "equipment" | "assembly" | "part";
   children: EquipmentTreeNode[];
+  imageUrl?: string;
   pictureNumber?: number;
   parentAssemblyId?: string;
 }
@@ -66,6 +67,7 @@ export function getEquipmentTree(
       id: assembly.id,
       label: assembly.serialNumber ? `${assembly.name} · ${assembly.serialNumber}` : assembly.name,
       type: isEquipmentRecord ? "equipment" : "assembly",
+      imageUrl: assembly.imageUrl,
       pictureNumber: assembly.pictureNumber,
       children: isEquipmentRecord ? [] : [
         ...machineAssemblies.filter((child) => child.parentAssemblyId === assembly.id).map(buildAssemblyNode),
@@ -76,6 +78,7 @@ export function getEquipmentTree(
             label: `${part.partNumber} - ${part.name}`,
             type: "part" as const,
             children: [],
+            imageUrl: part.imageUrl,
             parentAssemblyId: assembly.id,
           })),
       ],
@@ -87,6 +90,7 @@ export function getEquipmentTree(
     label: machine.name,
     type: "machine",
     pictureNumber: machine.pictureNumber,
+    imageUrl: machine.imageUrl,
     children: machineAssemblies.filter((assembly) => !assembly.parentAssemblyId).map(buildAssemblyNode),
   };
 }
