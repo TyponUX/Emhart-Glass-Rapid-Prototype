@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import { Bell, CircleUserRound, ClipboardList, LifeBuoy, Menu, PackageSearch, ShoppingCart, Truck, Wrench } from "lucide-react";
+import { Bell, CircleUserRound, ClipboardList, Factory, LifeBuoy, Menu, PackageSearch, ShoppingCart, Truck } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -19,7 +19,7 @@ interface PortalShellProps {
 }
 
 const primaryNavigation = [
-	{ route: "equipment" as const, label: "My Equipment", icon: Wrench },
+	{ route: "equipment" as const, label: "My Plant", icon: Factory },
 	{ route: "products" as const, label: "Products", icon: PackageSearch },
 	{ route: "quotes" as const, label: "Quotes", icon: ClipboardList },
 	{ route: "orders" as const, label: "Orders & Shipment", icon: Truck },

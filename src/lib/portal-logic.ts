@@ -15,8 +15,10 @@ import type {
 export interface EquipmentTreeNode {
   id: string;
   label: string;
-  type: "machine" | "assembly" | "part";
+  type: "machine" | "equipment" | "assembly" | "part";
   children: EquipmentTreeNode[];
+  pictureNumber?: number;
+  parentAssemblyId?: string;
 }
 
 export interface BreadcrumbItem {
@@ -58,24 +60,34 @@ export function getEquipmentTree(
   parts: PartRecord[],
 ): EquipmentTreeNode {
   const machineAssemblies = assemblies.filter((assembly) => assembly.machineId === machine.id);
+  const buildAssemblyNode = (assembly: AssemblyRecord): EquipmentTreeNode => {
+    const isEquipmentRecord = assembly.level === "Equipment";
+    return {
+      id: assembly.id,
+      label: assembly.serialNumber ? `${assembly.name} · ${assembly.serialNumber}` : assembly.name,
+      type: isEquipmentRecord ? "equipment" : "assembly",
+      pictureNumber: assembly.pictureNumber,
+      children: isEquipmentRecord ? [] : [
+        ...machineAssemblies.filter((child) => child.parentAssemblyId === assembly.id).map(buildAssemblyNode),
+        ...parts
+          .filter((part) => part.assemblyId === assembly.id)
+          .map((part) => ({
+            id: part.id,
+            label: `${part.partNumber} - ${part.name}`,
+            type: "part" as const,
+            children: [],
+            parentAssemblyId: assembly.id,
+          })),
+      ],
+    };
+  };
 
   return {
     id: machine.id,
     label: machine.name,
     type: "machine",
-    children: machineAssemblies.map((assembly) => ({
-      id: assembly.id,
-      label: assembly.name,
-      type: "assembly",
-      children: parts
-        .filter((part) => part.assemblyId === assembly.id)
-        .map((part) => ({
-          id: part.id,
-          label: `${part.partNumber} - ${part.name}`,
-          type: "part",
-          children: [],
-        })),
-    })),
+    pictureNumber: machine.pictureNumber,
+    children: machineAssemblies.filter((assembly) => !assembly.parentAssemblyId).map(buildAssemblyNode),
   };
 }
 

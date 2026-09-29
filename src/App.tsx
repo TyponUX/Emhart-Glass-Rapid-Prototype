@@ -10,8 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { accounts, users, type PortalRole } from "@/data/portal-data";
 import { PortalPlaceholder, PortalShell, type PortalRoute } from "@/components/shared/portal-shell";
-import { MachineOverview } from "@/features/equipment/machine-overview";
-import { MachineExplorer } from "@/features/equipment/machine-explorer";
+import { MyPlant } from "@/features/equipment/my-plant";
 import { ProductsAndServices } from "@/features/products/products-and-services";
 import { QuoteOrder } from "@/features/quotes/quote-order";
 import { TransactionProvider } from "@/features/quotes/transaction-context";
@@ -50,13 +49,12 @@ function PortalApp() {
   const [route, setRoute] = useState<PortalRoute>(() => new URLSearchParams(window.location.search).get("view") === "ui-inventory" ? "ui-inventory" : "equipment");
   const [role, setRole] = useState<PortalRole>(users[0].role);
   const [accountId, setAccountId] = useState(accounts[0].id);
-  const [selectedMachineId, setSelectedMachineId] = useState<string | undefined>();
   const [selectedQuoteId, setSelectedQuoteId] = useState<string | undefined>();
   const [selectedOrderId, setSelectedOrderId] = useState<string | undefined>();
   const { beginRequest } = useSupport();
   const titles: Record<Exclude<PortalRoute, "ui-inventory" | "notifications">, string> = {
     dashboard: "Welcome to the service portal",
-    equipment: "My Equipment",
+    equipment: "My Plant",
     maintenance: "Maintenance",
     training: "Training",
     projects: "Projects",
@@ -80,7 +78,7 @@ function PortalApp() {
     if (destination === "orders") setSelectedOrderId(id);
     setRoute(destination);
   };
-  const content = route === "ui-inventory" ? <ComponentInventory /> : route === "equipment" ? selectedMachineId ? <MachineExplorer machineId={selectedMachineId} onBack={() => setSelectedMachineId(undefined)} onRequestSupport={(context) => openSupport({ accountId, ...context })} /> : <MachineOverview accountId={accountId} onSelectMachine={setSelectedMachineId} /> : route === "products" ? <ProductsAndServices accountId={accountId} onGoToCart={() => setRoute("cart")} onRequestSupport={(context) => openSupport({ accountId, ...context })} /> : route === "cart" ? <QuoteOrder view="cart" onNavigate={navigateTransaction} /> : route === "quotes" ? <QuoteOrder view="quotes" initialQuoteId={selectedQuoteId} onNavigate={navigateTransaction} /> : route === "orders" ? <QuoteOrder view="orders" initialOrderId={selectedOrderId} onNavigate={navigateTransaction} /> : route === "support" ? <SupportCenter accountId={accountId} role={role} /> : route === "profile" ? <Profile role={role} accountId={accountId} onRoleChange={setRole} /> : <PortalPlaceholder eyebrow="Prototype foundation" title={pageTitle} description="Choose a workspace area from the navigation to continue." />;
+  const content = route === "ui-inventory" ? <ComponentInventory /> : route === "equipment" ? <MyPlant accountId={accountId} onRequestSupport={(context) => openSupport({ accountId, ...context })} /> : route === "products" ? <ProductsAndServices accountId={accountId} onGoToCart={() => setRoute("cart")} onRequestSupport={(context) => openSupport({ accountId, ...context })} /> : route === "cart" ? <QuoteOrder view="cart" onNavigate={navigateTransaction} /> : route === "quotes" ? <QuoteOrder view="quotes" initialQuoteId={selectedQuoteId} onNavigate={navigateTransaction} /> : route === "orders" ? <QuoteOrder view="orders" initialOrderId={selectedOrderId} onNavigate={navigateTransaction} /> : route === "support" ? <SupportCenter accountId={accountId} role={role} /> : route === "profile" ? <Profile role={role} accountId={accountId} onRoleChange={setRole} /> : <PortalPlaceholder eyebrow="Prototype foundation" title={pageTitle} description="Choose a workspace area from the navigation to continue." />;
 
   return <PortalShell route={route} accountId={accountId} onRouteChange={setRoute} onAccountChange={setAccountId}>{content}</PortalShell>;
 }

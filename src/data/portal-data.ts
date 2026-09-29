@@ -65,14 +65,27 @@ export interface MachineRecord {
   configuration: string;
   imageUrl: string;
   drawingUrl: string;
+  objectId?: string;
+  equipmentType?: string;
+  manufacturedDate?: string;
+  installationDate?: string;
+  pictureNumber?: number;
 }
 
 export interface AssemblyRecord {
   id: string;
   machineId: string;
+  parentAssemblyId?: string;
+  level?: "Equipment";
   name: string;
   description: string;
   imageUrl?: string;
+  equipmentType?: string;
+  objectId?: string;
+  serialNumber?: string;
+  manufacturedDate?: string;
+  installationDate?: string;
+  pictureNumber?: number;
 }
 
 export interface PartRecord {
@@ -258,6 +271,38 @@ export const machines: MachineRecord[] = [
     imageUrl: assetUrl("assets/images/Machines/Modular%20machine%20structure%20.png"),
     drawingUrl: assetUrl("assets/images/technical%20drawings/Blow%20side%20Lifting%20System.png"),
   },
+  {
+    id: "machine-brisbane-ais-10",
+    accountId: "account-northstar",
+    name: "AIS 10 Section 6 1/4\"",
+    model: "AIS 10 Section 6 1/4\"",
+    serialNumber: "BEG000216948",
+    site: "Visy Glass Brisbane",
+    section: "Brisbane Line QG33",
+    configuration: "IS machine, 10-section configuration",
+    imageUrl: assetUrl("assets/images/Machines/Modular%20machine%20structure%20.png"),
+    drawingUrl: assetUrl("assets/images/technical%20drawings/Blow%20side%20Lifting%20System.png"),
+    objectId: "210-910-2-2M0019-QG33",
+    equipmentType: "Machine",
+    manufacturedDate: "7/21/2021",
+    installationDate: "7/22/2021",
+    pictureNumber: 1,
+  },
+  {
+    id: "machine-demo-is",
+    accountId: "account-northstar",
+    name: "Prototype IS Machine",
+    model: "IS Machine",
+    serialNumber: "DEMO-IS-0001",
+    site: "Demo Glassworks",
+    section: "Demo Line 1",
+    configuration: "Prototype sample equipment",
+    imageUrl: assetUrl("assets/images/Machines/Modular%20machine%20structure%20.png"),
+    drawingUrl: assetUrl("assets/images/technical%20drawings/Blow%20side%20Lifting%20System.png"),
+    objectId: "DEMO-IS-0001",
+    equipmentType: "Machine",
+    pictureNumber: 1,
+  },
 ];
 
 export const assemblies: AssemblyRecord[] = [
@@ -289,6 +334,41 @@ export const assemblies: AssemblyRecord[] = [
     description: "Servo scoop, trough and deflector assembly for gob delivery.",
     imageUrl: assetUrl("assets/images/Machines/Modular%20machine%20structure%20.png"),
   },
+  ...Array.from({ length: 10 }, (_, index): AssemblyRecord => ({
+    id: `assembly-brisbane-section-frame-${index + 1}`,
+    machineId: "machine-brisbane-ais-10",
+    level: "Equipment",
+    name: "SEC AIS2 4-1/4\" TG VISY 2M0019-QG33",
+    description: "Installed AIS section frame.",
+    equipmentType: "Section Frame",
+    objectId: "210-1590-1-2M0019-QG33",
+    serialNumber: `BEG000216${String(591 + index)}`,
+    manufacturedDate: "6/10/2021",
+    pictureNumber: 2,
+  })),
+  ...[
+    { id: "neck-ring", name: "NECK RING MECHANISM", objectId: "191-5149-9", serialNumber: "BEG000212945", manufacturedDate: "11/25/2020", pictureNumber: 3 },
+    { id: "servo-invert", name: "SERVO EL INVERT MECHANISM UL", objectId: "200-2000-6", serialNumber: "BEG000217923", manufacturedDate: "4/26/2021", pictureNumber: 4 },
+    { id: "moc-valve", name: "MOC MECH AIS2 WITH EXTERNAL CHECK VALVE", objectId: "210-122-8", serialNumber: "BEG000215919", manufacturedDate: "5/27/2021" },
+    { id: "blank-mold-support", name: "BLANK MOLD SUPPORT MECHANISM", objectId: "210-2110-7", serialNumber: "BEG000216776", manufacturedDate: "6/8/2021", pictureNumber: 5 },
+    { id: "epvb-valve", name: "EPVB 26L VISY 2M0019-QG33", objectId: "210-444-20-2M0019-QG33", serialNumber: "BEG000216746", manufacturedDate: "6/8/2021" },
+    { id: "baffle-mechanism", name: "BAFFLE MECH EF5 1/2 PNEUM CUSH", objectId: "210-464-1", serialNumber: "BEG000216560", manufacturedDate: "5/10/2021", pictureNumber: 6 },
+    { id: "gearbox", name: "GEARBOX T/O MECH W UL FX3 5M MOTOR CABLE", objectId: "210-480-3-XB", serialNumber: "BEG000216766", manufacturedDate: "5/28/2021", pictureNumber: 7 },
+    { id: "plunger", name: "PLUNGER MECHANISM TG 4 1/4", objectId: "62-4043-3", serialNumber: "BEG000219174", manufacturedDate: "5/19/2021", pictureNumber: 8 },
+    { id: "funnel", name: "FUNNEL MECH TWO WAY AIR OP O-I", objectId: "801-112-1", serialNumber: "BEG000216736", manufacturedDate: "5/28/2021" },
+    { id: "blow-head", name: "BLOW HEAD MECHANISM", objectId: "801-510-6", serialNumber: "BEG000216756", manufacturedDate: "6/3/2021" },
+  ].map((mechanism): AssemblyRecord => ({
+    id: `assembly-brisbane-${mechanism.id}`,
+    machineId: "machine-brisbane-ais-10",
+    level: "Equipment",
+    name: mechanism.name,
+    description: `Installed ${mechanism.name.toLowerCase()}.`,
+    equipmentType: "Section Frame Mechanism",
+    objectId: mechanism.objectId,
+    serialNumber: mechanism.serialNumber,
+    manufacturedDate: mechanism.manufacturedDate,
+    pictureNumber: mechanism.pictureNumber,
+  })),
 ];
 
 export const parts: PartRecord[] = [
@@ -591,7 +671,7 @@ export const accounts: AccountRecord[] = [
     id: "account-northstar",
     organisation: "Northstar Glass Plant",
     sites: ["Northstar Glass Plant"],
-    machineIds: ["machine-ef-512-01", "machine-flexlube-01"],
+    machineIds: ["machine-ef-512-01", "machine-flexlube-01", "machine-brisbane-ais-10", "machine-demo-is"],
   },
 ];
 
