@@ -8,6 +8,7 @@ export interface PlantTreeNode {
   kind: PlantTreeKind;
   label: string;
   detail?: string;
+  objectId?: string;
   equipmentType?: string;
   path: string[];
   plantId: string;

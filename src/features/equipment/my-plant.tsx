@@ -87,6 +87,7 @@ function buildAssemblyNode(assembly: AssemblyRecord, machineId: string, parentPa
     kind: assembly.level === "Equipment" ? "equipment" : "assembly",
     label: assembly.name,
     detail: [assembly.objectId, assembly.serialNumber].filter(Boolean).join(" · "),
+    objectId: assembly.objectId,
     equipmentType: assembly.equipmentType,
     path,
     plantId,
@@ -96,7 +97,7 @@ function buildAssemblyNode(assembly: AssemblyRecord, machineId: string, parentPa
     assemblyId: assembly.id,
     pictureNumber: assembly.pictureNumber,
     children: [
-      ...(assembly.equipmentType ? [] : childAssemblies.map((child) => buildAssemblyNode(child, machineId, path, plantId, furnaceId, lineId))),
+      ...childAssemblies.map((child) => buildAssemblyNode(child, machineId, path, plantId, furnaceId, lineId)),
       ...assemblyParts.map((part) => buildPartNode(part, machineId, assembly.id, path, plantId, furnaceId, lineId)),
     ],
   };
@@ -127,6 +128,7 @@ function buildPlantTree(plantRecords: PlantRecord[]): PlantTreeNode[] {
       kind: "plant",
       label: plant.name,
       detail: plant.location,
+      objectId: plant.objectId,
       path: plantPath,
       plantId: plant.id,
       children: plant.furnaces.map((furnace) => {
@@ -136,6 +138,7 @@ function buildPlantTree(plantRecords: PlantRecord[]): PlantTreeNode[] {
           kind: "furnace" as const,
           label: furnace.name,
           detail: `${furnace.lines.length} lines`,
+          objectId: furnace.objectId,
           path: furnacePath,
           plantId: plant.id,
           furnaceId: furnace.id,
@@ -146,6 +149,7 @@ function buildPlantTree(plantRecords: PlantRecord[]): PlantTreeNode[] {
               kind: "line" as const,
               label: line.name,
               detail: `${line.equipment.length} equipment records`,
+              objectId: line.objectId,
               path: linePath,
               plantId: plant.id,
               furnaceId: furnace.id,
@@ -157,6 +161,7 @@ function buildPlantTree(plantRecords: PlantRecord[]): PlantTreeNode[] {
                   kind: equipment.equipmentType === "Machine" ? "machine" as const : "equipment" as const,
                   label: equipment.description,
                   detail: [equipment.objectId, equipment.serialNumber, equipment.equipmentType].join(" · "),
+                  objectId: equipment.objectId,
                   equipmentType: equipment.equipmentType,
                   path: equipmentPath,
                   plantId: plant.id,
@@ -184,8 +189,17 @@ function findMachineNode(nodes: PlantTreeNode[], machineId?: string): PlantTreeN
   return machineId ? flattenTreeNodes(nodes).find((node) => node.kind === "machine" && node.machineId === machineId) : undefined;
 }
 
-function getRevealIds(nodes: PlantTreeNode[], target: PlantScope & { assemblyId?: string }): string[] {
-  return [target.plantId, target.furnaceId, target.lineId, findMachineNode(nodes, target.machineId)?.id, target.assemblyId].filter((id): id is string => Boolean(id));
+function getRevealIds(nodes: PlantTreeNode[], target: PlantScope): string[] {
+  return [target.plantId, target.furnaceId, target.lineId, findMachineNode(nodes, target.machineId)?.id].filter((id): id is string => Boolean(id));
+}
+
+function findAncestorIds(nodes: PlantTreeNode[], id: string, ancestors: string[] = []): string[] {
+  for (const node of nodes) {
+    if (node.id === id) return ancestors;
+    const found = findAncestorIds(node.children, id, [...ancestors, node.id]);
+    if (found.length) return found;
+  }
+  return [];
 }
 
 function groupEquipmentNodes(nodes: PlantTreeNode[]): Array<{ label: string; nodes: PlantTreeNode[] }> {
@@ -309,7 +323,7 @@ function PlantTreeDetails({ node, onAddPart, onAddEquipment, onRequestSupport, o
   const supportMachineId = node.machineId ?? equipment?.machineId;
   const supportSite = supportMachineId ? machines.find((candidate) => candidate.id === supportMachineId)?.site ?? plant?.name ?? "" : plant?.name ?? "";
   const nodeDocuments = getPlantNodeDocuments(node, documents);
-  const childParts = node.kind === "equipment" || node.kind === "assembly" ? node.children.filter((child) => child.kind === "part") : [];
+  const childGroups = node.kind === "equipment" || node.kind === "assembly" ? groupTreeChildren(node) : [];
 
   return (
     <div className="space-y-4">
@@ -367,11 +381,11 @@ function PlantTreeDetails({ node, onAddPart, onAddEquipment, onRequestSupport, o
         </CardContent>
       </Card>
 
-      {childParts.length > 0 && (
-        <Card>
-          <CardHeader><CardTitle className="text-base">Parts · {childParts.length}</CardTitle></CardHeader>
+      {childGroups.map((group) => (
+        <Card key={group.label}>
+          <CardHeader><CardTitle className="text-base">{group.label} · {group.nodes.length}</CardTitle></CardHeader>
           <CardContent className="space-y-1 p-0 pb-2">
-            {childParts.map((child) => {
+            {group.nodes.map((child) => {
               const facets = getPlantItemFacets(child);
               return (
                 <button type="button" key={child.id} className="flex w-full items-center justify-between gap-3 px-6 py-2 text-left hover:bg-accent" onClick={() => onSelectChild?.(child)} disabled={!onSelectChild}>
@@ -382,7 +396,7 @@ function PlantTreeDetails({ node, onAddPart, onAddEquipment, onRequestSupport, o
             })}
           </CardContent>
         </Card>
-      )}
+      ))}
 
       <Card>
         <CardHeader><CardTitle className="text-base">Documentation</CardTitle></CardHeader>
@@ -413,6 +427,32 @@ function PlantTreeDetails({ node, onAddPart, onAddEquipment, onRequestSupport, o
   );
 }
 
+const TREE_COLUMNS = "grid grid-cols-[minmax(13rem,1.2fr)_minmax(0,1.6fr)_6rem_minmax(0,1fr)] @2xl:grid-cols-[minmax(13rem,1.2fr)_minmax(0,1.6fr)_6rem_minmax(0,1fr)_8.5rem]";
+const TREE_INDENT = 16;
+const STRUCTURE_LEVELS: Partial<Record<PlantTreeKind, string>> = { plant: "Plant", furnace: "Furnace", line: "Line" };
+
+function getTreeRowColumns(node: PlantTreeNode) {
+  const assembly = node.assemblyId && !node.partId ? assemblies.find((candidate) => candidate.id === node.assemblyId) : undefined;
+  return {
+    objectId: node.objectId ?? "-",
+    level: STRUCTURE_LEVELS[node.kind] ?? node.equipment?.level ?? assembly?.level ?? (node.kind === "part" ? "Part" : "Assembly"),
+    equipmentType: node.equipmentType ?? "-",
+    serialNumber: assembly?.serialNumber ?? node.equipment?.serialNumber ?? "-",
+  };
+}
+
+function PlantTreeColumnHeader() {
+  return (
+    <div className={`${TREE_COLUMNS} border-b bg-muted/40 text-xs font-semibold text-muted-foreground`}>
+      <span className="px-3 py-2">Object ID</span>
+      <span className="py-2 pr-3">Object Description</span>
+      <span className="py-2 pr-3">Level</span>
+      <span className="py-2 pr-3">Equipment Type</span>
+      <span className="hidden py-2 pr-3 @2xl:block">Serial Number</span>
+    </div>
+  );
+}
+
 function PlantTreeBranch({ node, depth, autoExpand, expandedIds, activeId, cart, onToggle, onSelect }: {
   node: PlantTreeNode;
   depth: number;
@@ -427,19 +467,24 @@ function PlantTreeBranch({ node, depth, autoExpand, expandedIds, activeId, cart,
   const listChildrenInline = node.kind === "assembly";
   const expanded = listChildrenInline || expandedIds.has(node.id) || (autoExpand && hasChildren);
   const canToggle = hasChildren && !listChildrenInline;
-  const childGroups = groupTreeChildren(node);
+  const columns = getTreeRowColumns(node);
 
   return (
     <div>
-      <div className={`flex min-h-10 items-center gap-2 border-b px-2 ${activeId === node.id ? "bg-accent" : "hover:bg-accent/50"}`} style={{ paddingLeft: `${depth * 22 + 8}px` }}>
-        {canToggle ? <Button type="button" variant="ghost" size="icon" className="size-7 shrink-0" aria-label={`${expanded ? "Collapse" : "Expand"} ${node.label}`} aria-expanded={expanded} onClick={() => onToggle(node.id)}>{expanded ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}</Button> : <span className="size-7 shrink-0" />}
-        <button type="button" className="flex min-w-0 flex-1 items-center gap-3 py-2 text-left" onClick={() => onSelect(node)}>
-          {node.pictureNumber && <EquipmentImagePlaceholder pictureNumber={node.pictureNumber} description={node.label} className="h-10 w-14 min-h-0 shrink-0 p-1" />}
-          <span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium">{node.label}</span>{node.detail && <span className="block truncate text-xs text-muted-foreground">{node.detail}</span>}</span>
-          {isPlantNodeInCart(node, cart) && <Badge variant="secondary" className="shrink-0">Already in cart</Badge>}
+      <div data-tree-level data-level-label={node.path.slice(0, -1).join(" / ") || "My Plant"} className={`${TREE_COLUMNS} min-h-8 cursor-pointer items-center border-b text-sm ${activeId === node.id ? "bg-accent" : "hover:bg-accent/50"}`} onClick={() => onSelect(node)}>
+        <div className="flex min-w-0 items-center gap-1 pr-3" style={{ paddingLeft: `${depth * TREE_INDENT + 4}px` }}>
+          {canToggle ? <Button type="button" variant="ghost" size="icon" className="size-6 shrink-0" aria-label={`${expanded ? "Collapse" : "Expand"} ${node.label}`} aria-expanded={expanded} onClick={(event) => { event.stopPropagation(); onToggle(node.id); }}>{expanded ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}</Button> : <span className="size-6 shrink-0" />}
+          <span className="truncate text-xs text-muted-foreground" title={columns.objectId}>{columns.objectId}</span>
+        </div>
+        <button type="button" className="flex min-w-0 items-center gap-1.5 py-1.5 pr-3 text-left font-medium" title={node.label} onClick={(event) => { event.stopPropagation(); onSelect(node); }}>
+          <span className="truncate">{node.label}</span>
+          {isPlantNodeInCart(node, cart) && <ShoppingCart className="size-3.5 shrink-0 text-muted-foreground" aria-label="Already in cart" />}
         </button>
+        <span className="truncate pr-3 text-muted-foreground">{columns.level}</span>
+        <span className="truncate pr-3 text-muted-foreground" title={columns.equipmentType}>{columns.equipmentType}</span>
+        <span className="hidden truncate pr-3 text-muted-foreground @2xl:block" title={columns.serialNumber}>{columns.serialNumber}</span>
       </div>
-      {hasChildren && expanded && <div>{childGroups.map((group) => <section key={`${node.id}-${group.label}`}><div data-tree-level data-level-label={`${node.path.join(" / ")} / ${group.label}`} className="flex items-center gap-2 px-2 py-2" style={{ paddingLeft: `${(depth + 1) * 22 + 8}px` }}><span className="h-px min-w-4 flex-1 bg-border" /><span className="shrink-0 text-[10px] font-semibold uppercase text-muted-foreground">{group.label} · {group.nodes.length}</span><span className="h-px min-w-4 flex-1 bg-border" /></div>{group.nodes.map((child) => <PlantTreeBranch key={child.id} node={child} depth={depth + 1} autoExpand={autoExpand} expandedIds={expandedIds} activeId={activeId} cart={cart} onToggle={onToggle} onSelect={onSelect} />)}</section>)}</div>}
+      {hasChildren && expanded && <div>{node.children.map((child) => <PlantTreeBranch key={child.id} node={child} depth={depth + 1} autoExpand={autoExpand} expandedIds={expandedIds} activeId={activeId} cart={cart} onToggle={onToggle} onSelect={onSelect} />)}</div>}
     </div>
   );
 }
@@ -719,7 +764,7 @@ export function MyPlant({ accountId, onRequestSupport }: MyPlantProps) {
 
   function revealTreeNode(node: PlantTreeNode) {
     selectTreeNode(node);
-    setExpandedIds((current) => new Set([...current, ...getRevealIds(allTreeNodes, node)]));
+    setExpandedIds((current) => new Set([...current, ...findAncestorIds(allTreeNodes, node.id)]));
   }
 
   function selectHierarchySearchResult(node: PlantTreeNode) {
@@ -886,18 +931,19 @@ export function MyPlant({ accountId, onRequestSupport }: MyPlantProps) {
       {viewMode === "tree" && filtersActive && filterResultSummary}
 
       {viewMode === "tree" && <section className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.5fr)_minmax(18rem,0.8fr)]">
-        <div ref={treeScrollRef} onScroll={handleTreeScroll} className="max-h-[calc(100vh-8rem-var(--plant-toolbar-h))] min-h-0 overflow-y-auto border bg-card">
+        <div ref={treeScrollRef} onScroll={handleTreeScroll} className="@container max-h-[calc(100vh-8rem-var(--plant-toolbar-h))] min-h-0 overflow-y-auto border bg-card">
           <Card className="rounded-none border-0 shadow-none">
-            {treeHasScrolled && <CardHeader ref={treeHeaderRef} className="sticky top-0 z-20 border-b bg-card py-3">
-              <nav aria-label="Plant hierarchy" aria-live="polite" className="flex items-center gap-2 py-2 text-sm">
+            <div ref={treeHeaderRef} className="sticky top-0 z-20 bg-card">
+              {treeHasScrolled && <nav aria-label="Plant hierarchy" aria-live="polite" className="flex items-center gap-2 border-b px-3 py-2 text-sm">
                 {currentTreePath.split(" / ").map((label, index, path) => (
                   <span key={`${label}-${index}`} className="flex min-w-0 items-center gap-2">
                     {index > 0 && <span className="text-muted-foreground">/</span>}
                     <span className={`truncate ${index === path.length - 1 ? "font-semibold text-foreground" : "text-muted-foreground"}`}>{label}</span>
                   </span>
                 ))}
-              </nav>
-            </CardHeader>}
+              </nav>}
+              <PlantTreeColumnHeader />
+            </div>
             <CardContent className="p-0">{treeNodes.length ? treeNodes.map((node) => <PlantTreeBranch key={node.id} node={node} depth={0} autoExpand={Boolean(normalizedQuery) || attributeFiltersActive} expandedIds={expandedIds} activeId={activeTreeNodeId} cart={cart} onToggle={toggleTreeNode} onSelect={selectTreeNode} />) : <p className="p-5 text-sm text-muted-foreground">No hierarchy items match this search.</p>}</CardContent>
           </Card>
         </div>

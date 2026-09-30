@@ -13,18 +13,21 @@ export interface PlantEquipmentRecord {
 
 export interface ProductionLineRecord {
   id: string;
+  objectId: string;
   name: string;
   equipment: PlantEquipmentRecord[];
 }
 
 export interface FurnaceRecord {
   id: string;
+  objectId: string;
   name: string;
   lines: ProductionLineRecord[];
 }
 
 export interface PlantRecord {
   id: string;
+  objectId?: string;
   accountId: string;
   name: string;
   location: string;
@@ -37,20 +40,23 @@ const emptyEquipment: PlantEquipmentRecord[] = [];
 export const plants: PlantRecord[] = [
   {
     id: "plant-visy-brisbane",
+    objectId: "11061026",
     accountId: "account-northstar",
     name: "Visy Glass Brisbane",
     location: "Brisbane, Australia",
     coordinates: { lat: -27.47, lon: 153.03 },
     furnaces: [
-      { id: "furnace-brisbane-qg1", name: "Brisbane Furnace QG1", lines: [] },
+      { id: "furnace-brisbane-qg1", objectId: "11061026-FQG1", name: "Brisbane Furnace QG1", lines: [] },
       {
         id: "furnace-brisbane-qg3",
+        objectId: "11061026-FQG3",
         name: "Brisbane Furnace QG3",
         lines: [
-          { id: "line-brisbane-qg31", name: "Brisbane Line QG31", equipment: emptyEquipment },
-          { id: "line-brisbane-qg32", name: "Brisbane Line QG32", equipment: emptyEquipment },
+          { id: "line-brisbane-qg31", objectId: "11061026-LQG31", name: "Brisbane Line QG31", equipment: emptyEquipment },
+          { id: "line-brisbane-qg32", objectId: "11061026-LQG32", name: "Brisbane Line QG32", equipment: emptyEquipment },
           {
             id: "line-brisbane-qg33",
+            objectId: "11061026-LQG33",
             name: "Brisbane Line QG33",
             equipment: [
               {
