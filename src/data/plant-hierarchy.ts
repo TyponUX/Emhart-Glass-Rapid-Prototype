@@ -28,6 +28,7 @@ export interface PlantRecord {
   accountId: string;
   name: string;
   location: string;
+  coordinates: { lat: number; lon: number };
   furnaces: FurnaceRecord[];
 }
 
@@ -39,6 +40,7 @@ export const plants: PlantRecord[] = [
     accountId: "account-northstar",
     name: "Visy Glass Brisbane",
     location: "Brisbane, Australia",
+    coordinates: { lat: -27.47, lon: 153.03 },
     furnaces: [
       { id: "furnace-brisbane-qg1", name: "Brisbane Furnace QG1", lines: [] },
       {
@@ -134,5 +136,13 @@ export const plants: PlantRecord[] = [
         ],
       },
     ],
+  },
+  {
+    id: "plant-visy-adelaide",
+    accountId: "account-northstar",
+    name: "Visy Glass Adelaide",
+    location: "Adelaide, Australia",
+    coordinates: { lat: -34.93, lon: 138.6 },
+    furnaces: [],
   },
 ];

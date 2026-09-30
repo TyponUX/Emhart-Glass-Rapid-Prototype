@@ -1,38 +1,74 @@
-import { useEffect, useRef, useState, type UIEvent } from "react";
-import { ArrowLeft, ArrowRight, ChevronDown, ChevronRight, Cog, Download, Factory, FileText, Flame, LayoutGrid, ListTree, MapPin, Minus, Plus, Rows3, Search, ShoppingCart, Wrench } from "lucide-react";
+import { useEffect, useRef, useState, type CSSProperties, type UIEvent } from "react";
+import { ArrowLeft, ArrowRight, ChevronDown, ChevronRight, Cog, Download, Factory, FileText, Flame, MapPin, Minus, Plus, Rows3, ShoppingCart, Wrench } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { EquipmentImagePlaceholder } from "@/components/shared/equipment-image-placeholder";
 import { plants, type FurnaceRecord, type PlantEquipmentRecord, type PlantRecord, type ProductionLineRecord } from "@/data/plant-hierarchy";
 import { assemblies, documents, machines, parts } from "@/data/portal-data";
-import type { AssemblyRecord, DocumentRecord, PartRecord } from "@/data/portal-data";
+import type { AssemblyRecord, PartRecord } from "@/data/portal-data";
 import { useTransaction } from "@/features/quotes/transaction-context";
 import { useActionFeedback } from "@/components/shared/action-feedback";
 import { getOrderability, getPartCompatibility } from "@/lib/portal-logic";
+import {
+  AVAILABILITY_LABELS,
+  DEMO_EQUIPMENT_LEAD_TIME,
+  DEMO_EQUIPMENT_PRICE,
+  EMPTY_PLANT_FILTERS,
+  TYPE_LABELS,
+  clearPlantUrlState,
+  filterPlantTree,
+  getDemoStockCount,
+  getPlantFacetCounts,
+  getPlantItemFacets,
+  getPlantNodeDocuments,
+  hasActiveFilters,
+  isInPlantScope,
+  isPlantItem,
+  isScopeActive,
+  matchesPlantFilters,
+  matchesPlantQuery,
+  readPlantUrlState,
+  sortPlantNodes,
+  sortPlantTree,
+  writePlantUrlState,
+  type PlantFilters,
+  type PlantScope,
+  type PlantSortKey,
+  type PlantTreeKind,
+  type PlantTreeNode,
+  type PlantViewMode,
+} from "@/lib/plant-filters";
+import { PlantToolbar, type PlantScopeLevel } from "@/features/equipment/plant-toolbar";
 
-type PlantViewMode = "tiles" | "tree";
 type PlantTileLevel = "plant" | "furnace" | "line" | "machine" | "equipment";
-type PlantTreeKind = "plant" | "furnace" | "line" | "machine" | "equipment" | "assembly" | "part";
 
-interface PlantTreeNode {
-  id: string;
-  kind: PlantTreeKind;
-  label: string;
-  detail?: string;
-  equipmentType?: string;
-  path: string[];
-  plantId: string;
-  furnaceId?: string;
-  lineId?: string;
-  machineId?: string;
-  assemblyId?: string;
-  partId?: string;
-  equipment?: PlantEquipmentRecord;
-  pictureNumber?: number;
-  children: PlantTreeNode[];
+// Simplified Australia outline; viewBox maps lon 113–154°E to x 0–100 and lat 10–44°S to y 0–83.
+const australiaMainlandPath = "M72 1.7 L74.4 9.8 L78.8 13.4 L80 17.1 L82.4 22.7 L88.3 27.1 L91.5 32.7 L97.8 42.7 L99 45.4 L94.6 55.9 L93.2 58.3 L90.2 66.1 L81.5 71 L77.8 69 L72 69.3 L62.2 60.8 L60.5 56.1 L56.1 60.5 L43.9 52.5 L21.7 58.3 L12 61 L5.1 59.5 L6.8 53.7 L3.9 45.9 L0.7 39 L2.7 29.3 L13.7 25.1 L22.4 19.5 L29.3 11 L36.8 12.2 L43.4 5.9 L57.8 5.4 L56.1 13.4 L67.3 18.5 L69.5 7.3 Z";
+const tasmaniaPath = "M77.1 74.9 L86.1 75.4 L85.9 80.5 L82.4 82 L78.5 78.6 Z";
+
+function projectToAustraliaMap({ lat, lon }: PlantRecord["coordinates"]) {
+  return { left: `${((lon - 113) / 41) * 100}%`, top: `${((-lat - 10) / 34) * 100}%` };
+}
+
+function PlantLocationMap({ plantRecords, onSelect }: { plantRecords: PlantRecord[]; onSelect: (plant: PlantRecord) => void }) {
+  return (
+    <div className="flex justify-center border bg-neutral-100 p-4" aria-label="Plant locations map">
+      <div className="relative aspect-[100/83] h-64">
+        <svg viewBox="0 0 100 83" className="absolute inset-0 size-full" aria-hidden="true">
+          <path d={australiaMainlandPath} fill="none" stroke="black" strokeWidth="0.6" strokeLinejoin="round" />
+          <path d={tasmaniaPath} fill="none" stroke="black" strokeWidth="0.6" strokeLinejoin="round" />
+        </svg>
+        {plantRecords.map((plant) => (
+          <button key={plant.id} type="button" className="group absolute -translate-x-1/2 -translate-y-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" style={projectToAustraliaMap(plant.coordinates)} aria-label={`Open ${plant.name}`} title={plant.name} onClick={() => onSelect(plant)}>
+            <MapPin className="size-6 fill-red-600 text-red-700" />
+            <span className="pointer-events-none absolute left-1/2 top-full mt-0.5 -translate-x-1/2 whitespace-nowrap text-xs font-medium text-black">{plant.location.split(",")[0]}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function buildAssemblyTree(machineId: string, path: string[], plantId: string, furnaceId: string, lineId: string, parentAssemblyId?: string): PlantTreeNode[] {
@@ -59,8 +95,8 @@ function buildAssemblyNode(assembly: AssemblyRecord, machineId: string, parentPa
     machineId,
     assemblyId: assembly.id,
     pictureNumber: assembly.pictureNumber,
-    children: assembly.equipmentType ? [] : [
-      ...childAssemblies.map((child) => buildAssemblyNode(child, machineId, path, plantId, furnaceId, lineId)),
+    children: [
+      ...(assembly.equipmentType ? [] : childAssemblies.map((child) => buildAssemblyNode(child, machineId, path, plantId, furnaceId, lineId))),
       ...assemblyParts.map((part) => buildPartNode(part, machineId, assembly.id, path, plantId, furnaceId, lineId)),
     ],
   };
@@ -140,25 +176,16 @@ function buildPlantTree(plantRecords: PlantRecord[]): PlantTreeNode[] {
   });
 }
 
-function filterTree(nodes: PlantTreeNode[], query: string): PlantTreeNode[] {
-  if (!query) return nodes;
-  return nodes.flatMap((node) => {
-    const children = filterTree(node.children, query);
-    const matches = `${node.label} ${node.detail ?? ""}`.toLowerCase().includes(query);
-    return matches || children.length ? [{ ...node, children }] : [];
-  });
-}
-
-function findTreeMatches(nodes: PlantTreeNode[], query: string): PlantTreeNode[] {
-  if (!query) return [];
-  return nodes.flatMap((node) => {
-    const matches = `${node.label} ${node.detail ?? ""}`.toLowerCase().includes(query);
-    return [...(matches ? [node] : []), ...findTreeMatches(node.children, query)];
-  });
-}
-
 function flattenTreeNodes(nodes: PlantTreeNode[]): PlantTreeNode[] {
   return nodes.flatMap((node) => [node, ...flattenTreeNodes(node.children)]);
+}
+
+function findMachineNode(nodes: PlantTreeNode[], machineId?: string): PlantTreeNode | undefined {
+  return machineId ? flattenTreeNodes(nodes).find((node) => node.kind === "machine" && node.machineId === machineId) : undefined;
+}
+
+function getRevealIds(nodes: PlantTreeNode[], target: PlantScope & { assemblyId?: string }): string[] {
+  return [target.plantId, target.furnaceId, target.lineId, findMachineNode(nodes, target.machineId)?.id, target.assemblyId].filter((id): id is string => Boolean(id));
 }
 
 function groupEquipmentNodes(nodes: PlantTreeNode[]): Array<{ label: string; nodes: PlantTreeNode[] }> {
@@ -233,33 +260,6 @@ function groupTreeChildren(parent: PlantTreeNode): Array<{ label: string; nodes:
   return Array.from(groups, ([label, nodes]) => ({ label, nodes }));
 }
 
-function getPlantNodeDocuments(node: PlantTreeNode, documentRecords: DocumentRecord[]): DocumentRecord[] {
-  const machineIds = new Set<string>();
-  const assemblyIds = new Set<string>();
-  const partIds = new Set<string>();
-
-  if (node.machineId) machineIds.add(node.machineId);
-  if (node.equipment?.machineId) machineIds.add(node.equipment.machineId);
-  if (node.assemblyId) assemblyIds.add(node.assemblyId);
-  if (node.partId) partIds.add(node.partId);
-
-  let parentAssemblyId = node.assemblyId ?? (node.partId ? parts.find((part) => part.id === node.partId)?.assemblyId : undefined);
-  while (parentAssemblyId) {
-    assemblyIds.add(parentAssemblyId);
-    parentAssemblyId = assemblies.find((assembly) => assembly.id === parentAssemblyId)?.parentAssemblyId;
-  }
-
-  return documentRecords.filter((document) =>
-    document.relatedMachineIds.some((id) => machineIds.has(id))
-    || document.relatedAssemblyIds.some((id) => assemblyIds.has(id))
-    || document.relatedPartIds.some((id) => partIds.has(id)),
-  );
-}
-
-function getDemoStockCount(itemId: string): number {
-  return [...itemId].reduce((total, character) => (total * 31 + character.charCodeAt(0)) % 10, 7);
-}
-
 function getDemoPreviousSerial(serialNumber?: string): string | undefined {
   if (!serialNumber) return undefined;
   const lastDigitMatch = serialNumber.match(/\d(?=\D*$)/);
@@ -274,25 +274,26 @@ function isPlantNodeInCart(node: PlantTreeNode, cart: ReturnType<typeof useTrans
   return cart.some((item) => item.type === "equipment" && item.installedEquipmentId === installedEquipmentId);
 }
 
-function PlantTreeDetails({ node, onAddPart, onAddEquipment, onRequestSupport }: {
+function PlantTreeDetails({ node, onAddPart, onAddEquipment, onRequestSupport, onSelectChild }: {
   node?: PlantTreeNode;
   onAddPart: (node: PlantTreeNode, quantity: number) => void;
   onAddEquipment: (node: PlantTreeNode) => void;
   onRequestSupport: (context: { site: string; machineId: string; assemblyId?: string; partId?: string }) => void;
+  onSelectChild?: (node: PlantTreeNode) => void;
 }) {
   const [quantity, setQuantity] = useState(1);
   const { cart } = useTransaction();
   useEffect(() => setQuantity(1), [node?.id]);
 
   if (!node) {
-    return <Card className="h-fit"><CardHeader><CardTitle className="text-base">Details</CardTitle></CardHeader><CardContent><p className="text-sm text-muted-foreground">Select an item in the tree to view its details here.</p></CardContent></Card>;
+    return <Card className="h-fit"><CardHeader><CardTitle className="text-base">Details</CardTitle></CardHeader><CardContent><p className="text-sm text-muted-foreground">Select an item to view its details here.</p></CardContent></Card>;
   }
 
   const plant = plants.find((candidate) => candidate.id === node.plantId);
   const furnace = plant?.furnaces.find((candidate) => candidate.id === node.furnaceId);
   const line = furnace?.lines.find((candidate) => candidate.id === node.lineId);
   const machine = node.machineId ? machines.find((candidate) => candidate.id === node.machineId) : undefined;
-  const assembly = node.assemblyId ? assemblies.find((candidate) => candidate.id === node.assemblyId) : undefined;
+  const assembly = node.assemblyId && !node.partId ? assemblies.find((candidate) => candidate.id === node.assemblyId) : undefined;
   const part = node.partId ? parts.find((candidate) => candidate.id === node.partId) : undefined;
   const equipment = node.equipment;
   const displayedSerialNumber = part ? undefined : assembly?.serialNumber ?? equipment?.serialNumber ?? machine?.serialNumber;
@@ -308,11 +309,13 @@ function PlantTreeDetails({ node, onAddPart, onAddEquipment, onRequestSupport }:
   const supportMachineId = node.machineId ?? equipment?.machineId;
   const supportSite = supportMachineId ? machines.find((candidate) => candidate.id === supportMachineId)?.site ?? plant?.name ?? "" : plant?.name ?? "";
   const nodeDocuments = getPlantNodeDocuments(node, documents);
+  const childParts = node.kind === "equipment" || node.kind === "assembly" ? node.children.filter((child) => child.kind === "part") : [];
 
   return (
     <div className="space-y-4">
       <Card className="h-fit">
         <CardHeader>
+          {node.path.length > 1 && <p className="text-xs text-muted-foreground">{node.path.slice(0, -1).join(" / ")}</p>}
           <div className="flex items-start justify-between gap-3"><CardTitle className="text-base">{node.label}</CardTitle><Badge variant="outline">{node.kind === "equipment" ? "Equipment" : node.kind[0].toUpperCase() + node.kind.slice(1)}</Badge></div>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -321,13 +324,13 @@ function PlantTreeDetails({ node, onAddPart, onAddEquipment, onRequestSupport }:
           {node.kind === "furnace" && <dl className="grid grid-cols-2 gap-3 text-sm"><div><dt className="text-muted-foreground">Plant</dt><dd className="font-medium">{plant?.name}</dd></div><div><dt className="text-muted-foreground">Lines</dt><dd className="font-medium">{furnace?.lines.length ?? 0}</dd></div></dl>}
           {node.kind === "line" && <dl className="grid grid-cols-2 gap-3 text-sm"><div><dt className="text-muted-foreground">Furnace</dt><dd className="font-medium">{furnace?.name}</dd></div><div><dt className="text-muted-foreground">Machines</dt><dd className="font-medium">{line?.equipment.filter((item) => item.equipmentType === "Machine").length ?? 0}</dd></div><div><dt className="text-muted-foreground">Other equipment</dt><dd className="font-medium">{line?.equipment.filter((item) => item.equipmentType !== "Machine").length ?? 0}</dd></div></dl>}
           {equipment && <dl className="grid grid-cols-2 gap-3 text-sm">{[["Object ID", equipment.objectId], ["Equipment type", equipment.equipmentType], ["Serial number", equipment.serialNumber], ["Manufactured date", equipment.manufacturedDate], ["Installation date", equipment.installationDate]].map(([label, value]) => <div key={label}><dt className="text-muted-foreground">{label}</dt><dd className="font-medium">{value}</dd></div>)}</dl>}
-          {machine && <p className="text-sm">{machine.model} · {machine.serialNumber}</p>}
+          {machine && !node.partId && <p className="text-sm">{machine.model} · {machine.serialNumber}</p>}
           {assembly && <><p className="text-sm text-muted-foreground">{assembly.description}</p><dl className="grid grid-cols-2 gap-3 text-sm">{[["Equipment type", assembly.equipmentType], ["Object ID", assembly.objectId], ["Serial number", assembly.serialNumber], ["Manufactured date", assembly.manufacturedDate]].filter(([, value]) => value).map(([label, value]) => <div key={label}><dt className="text-muted-foreground">{label}</dt><dd className="font-medium">{value}</dd></div>)}</dl></>}
           {(node.kind === "machine" || node.kind === "equipment" || node.kind === "assembly") && !part && <dl className="grid grid-cols-2 gap-3 text-sm">
             <div><dt className="font-medium text-muted-foreground">Compatible with</dt><dd className="font-medium">{compatibleMachines.length ? compatibleMachines.map((candidate) => candidate.name).join(", ") : "Parent machine / line equipment"}</dd></div>
-            <div><dt className="font-medium text-muted-foreground">Estimated delivery</dt><dd className="font-medium">{availableCount > 0 ? "4–6 weeks" : "Unavailable"}</dd></div>
+            <div><dt className="font-medium text-muted-foreground">Estimated delivery</dt><dd className="font-medium">{availableCount > 0 ? DEMO_EQUIPMENT_LEAD_TIME : "Unavailable"}</dd></div>
             <div><dt className="font-medium text-muted-foreground">Available now</dt><dd className={`font-medium ${availableCount >= 1 && availableCount <= 9 ? "text-green-700" : ""}`}>{availableCount} units</dd></div>
-            <div><dt className="font-medium text-muted-foreground">Price</dt><dd className="font-medium">EUR 1,250</dd></div>
+            <div><dt className="font-medium text-muted-foreground">Price</dt><dd className="font-medium">EUR {DEMO_EQUIPMENT_PRICE.toLocaleString()}</dd></div>
             {displayedSerialNumber && previousSerialNumber && <div className="col-span-2 border-t pt-2"><dt className="font-medium text-muted-foreground">Serial number change</dt><dd className="font-medium">{previousSerialNumber} <ArrowRight className="mx-1 inline size-3" /> {displayedSerialNumber}</dd></div>}
             {cartItemAdded && <div className="col-span-2"><Badge variant="secondary">Already in cart</Badge></div>}
           </dl>}
@@ -364,6 +367,23 @@ function PlantTreeDetails({ node, onAddPart, onAddEquipment, onRequestSupport }:
         </CardContent>
       </Card>
 
+      {childParts.length > 0 && (
+        <Card>
+          <CardHeader><CardTitle className="text-base">Parts · {childParts.length}</CardTitle></CardHeader>
+          <CardContent className="space-y-1 p-0 pb-2">
+            {childParts.map((child) => {
+              const facets = getPlantItemFacets(child);
+              return (
+                <button type="button" key={child.id} className="flex w-full items-center justify-between gap-3 px-6 py-2 text-left hover:bg-accent" onClick={() => onSelectChild?.(child)} disabled={!onSelectChild}>
+                  <span className="min-w-0"><span className="block truncate text-sm font-medium">{child.label}</span><span className="block text-xs text-muted-foreground">{child.detail}</span></span>
+                  {facets && <Badge variant={facets.availability === "unavailable" ? "outline" : "secondary"} className="shrink-0">{AVAILABILITY_LABELS[facets.availability]}</Badge>}
+                </button>
+              );
+            })}
+          </CardContent>
+        </Card>
+      )}
+
       <Card>
         <CardHeader><CardTitle className="text-base">Documentation</CardTitle></CardHeader>
         <CardContent className="space-y-3">
@@ -393,10 +413,10 @@ function PlantTreeDetails({ node, onAddPart, onAddEquipment, onRequestSupport }:
   );
 }
 
-function PlantTreeBranch({ node, depth, query, expandedIds, activeId, cart, onToggle, onSelect }: {
+function PlantTreeBranch({ node, depth, autoExpand, expandedIds, activeId, cart, onToggle, onSelect }: {
   node: PlantTreeNode;
   depth: number;
-  query: string;
+  autoExpand: boolean;
   expandedIds: Set<string>;
   activeId?: string;
   cart: ReturnType<typeof useTransaction>["cart"];
@@ -405,7 +425,7 @@ function PlantTreeBranch({ node, depth, query, expandedIds, activeId, cart, onTo
 }) {
   const hasChildren = node.children.length > 0;
   const listChildrenInline = node.kind === "assembly";
-  const expanded = listChildrenInline || expandedIds.has(node.id) || Boolean(query && hasChildren);
+  const expanded = listChildrenInline || expandedIds.has(node.id) || (autoExpand && hasChildren);
   const canToggle = hasChildren && !listChildrenInline;
   const childGroups = groupTreeChildren(node);
 
@@ -419,7 +439,7 @@ function PlantTreeBranch({ node, depth, query, expandedIds, activeId, cart, onTo
           {isPlantNodeInCart(node, cart) && <Badge variant="secondary" className="shrink-0">Already in cart</Badge>}
         </button>
       </div>
-      {hasChildren && expanded && <div>{childGroups.map((group) => <section key={`${node.id}-${group.label}`}><div data-tree-level data-level-label={`${node.path.join(" / ")} / ${group.label}`} className="flex items-center gap-2 px-2 py-2" style={{ paddingLeft: `${(depth + 1) * 22 + 8}px` }}><span className="h-px min-w-4 flex-1 bg-border" /><span className="shrink-0 text-[10px] font-semibold uppercase text-muted-foreground">{group.label} · {group.nodes.length}</span><span className="h-px min-w-4 flex-1 bg-border" /></div>{group.nodes.map((child) => <PlantTreeBranch key={child.id} node={child} depth={depth + 1} query={query} expandedIds={expandedIds} activeId={activeId} cart={cart} onToggle={onToggle} onSelect={onSelect} />)}</section>)}</div>}
+      {hasChildren && expanded && <div>{childGroups.map((group) => <section key={`${node.id}-${group.label}`}><div data-tree-level data-level-label={`${node.path.join(" / ")} / ${group.label}`} className="flex items-center gap-2 px-2 py-2" style={{ paddingLeft: `${(depth + 1) * 22 + 8}px` }}><span className="h-px min-w-4 flex-1 bg-border" /><span className="shrink-0 text-[10px] font-semibold uppercase text-muted-foreground">{group.label} · {group.nodes.length}</span><span className="h-px min-w-4 flex-1 bg-border" /></div>{group.nodes.map((child) => <PlantTreeBranch key={child.id} node={child} depth={depth + 1} autoExpand={autoExpand} expandedIds={expandedIds} activeId={activeId} cart={cart} onToggle={onToggle} onSelect={onSelect} />)}</section>)}</div>}
     </div>
   );
 }
@@ -430,15 +450,24 @@ interface MyPlantProps {
 }
 
 export function MyPlant({ accountId, onRequestSupport }: MyPlantProps) {
-  const [viewMode, setViewMode] = useState<PlantViewMode>("tiles");
+  const [initialUrlState] = useState(() => readPlantUrlState(window.location.search));
+  const [viewMode, setViewMode] = useState<PlantViewMode>(initialUrlState.view);
   const [tileBrowseLevel, setTileBrowseLevel] = useState<PlantTileLevel>("plant");
-  const [treeQuery, setTreeQuery] = useState("");
-  const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set());
+  const [treeQuery, setTreeQuery] = useState(initialUrlState.query);
+  const [filters, setFilters] = useState<PlantFilters>(initialUrlState.filters);
+  const [sort, setSort] = useState<PlantSortKey>(initialUrlState.sort);
+  const [locationFilter, setLocationFilter] = useState<PlantScope>(initialUrlState.scope);
+  const [selectedResultId, setSelectedResultId] = useState<string>();
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(() => initialUrlState.view === "tree"
+    ? new Set(getRevealIds(buildPlantTree(plants.filter((plant) => plant.accountId === accountId)), initialUrlState.scope))
+    : new Set());
   const [activeTreeNodeId, setActiveTreeNodeId] = useState<string>();
   const [currentTreePath, setCurrentTreePath] = useState("My Plant");
   const [treeHasScrolled, setTreeHasScrolled] = useState(false);
   const treeScrollRef = useRef<HTMLDivElement>(null);
   const treeHeaderRef = useRef<HTMLDivElement>(null);
+  const toolbarRef = useRef<HTMLDivElement>(null);
+  const [toolbarHeight, setToolbarHeight] = useState(0);
   const [selectedPlantId, setSelectedPlantId] = useState<string>();
   const [selectedFurnaceId, setSelectedFurnaceId] = useState<string>();
   const [selectedLineId, setSelectedLineId] = useState<string>();
@@ -447,14 +476,35 @@ export function MyPlant({ accountId, onRequestSupport }: MyPlantProps) {
   const [selectedMachineAssemblyId, setSelectedMachineAssemblyId] = useState<string>();
   const [selectedTileEquipmentId, setSelectedTileEquipmentId] = useState<string>();
   const [selectedEquipmentId, setSelectedEquipmentId] = useState<string>();
+  const { addToCart, cart } = useTransaction();
   const tenantPlants = plants.filter((plant) => plant.accountId === accountId);
   const selectedPlant = tenantPlants.find((plant) => plant.id === selectedPlantId);
   const selectedFurnace = selectedPlant?.furnaces.find((furnace) => furnace.id === selectedFurnaceId);
   const selectedLine = selectedFurnace?.lines.find((line) => line.id === selectedLineId);
   const allTreeNodes = buildPlantTree(tenantPlants);
   const normalizedQuery = treeQuery.trim().toLowerCase();
-  const treeNodes = filterTree(allTreeNodes, normalizedQuery);
-  const tileSearchResults = findTreeMatches(allTreeNodes, normalizedQuery);
+  const activeScope = locationFilter;
+  const attributeFiltersActive = hasActiveFilters(filters);
+  const filtersActive = attributeFiltersActive || isScopeActive(locationFilter);
+  const isInCart = (node: PlantTreeNode) => isPlantNodeInCart(node, cart);
+  const nodeMatches = (node: PlantTreeNode) => isInPlantScope(node, activeScope)
+    && matchesPlantQuery(node, normalizedQuery)
+    && (!attributeFiltersActive || matchesPlantFilters(node, filters, isInCart));
+  const scopedItemNodes = flattenTreeNodes(allTreeNodes).filter((node) => isPlantItem(node) && isInPlantScope(node, activeScope) && matchesPlantQuery(node, normalizedQuery));
+  const facetCounts = getPlantFacetCounts(scopedItemNodes, isInCart);
+  const filteredItemNodes = sortPlantNodes(attributeFiltersActive ? scopedItemNodes.filter((node) => matchesPlantFilters(node, filters, isInCart)) : scopedItemNodes, sort);
+  const treeNodes = normalizedQuery || filtersActive || sort !== "hierarchy"
+    ? sortPlantTree(filterPlantTree(allTreeNodes, nodeMatches), sort)
+    : allTreeNodes;
+  const tileSearchResults = normalizedQuery ? flattenTreeNodes(allTreeNodes).filter(nodeMatches) : [];
+  const selectedResultNode = selectedResultId ? findTreeNode(allTreeNodes, selectedResultId) : undefined;
+  const scopePlant = tenantPlants.find((plant) => plant.id === activeScope.plantId);
+  const scopeFurnace = scopePlant?.furnaces.find((furnace) => furnace.id === activeScope.furnaceId);
+  const scopeLines = scopeFurnace?.lines ?? scopePlant?.furnaces.flatMap((furnace) => furnace.lines) ?? [];
+  const scopeMachineNodes = flattenTreeNodes(allTreeNodes).filter((node) => node.kind === "machine" && node.machineId && isInPlantScope(node, { ...activeScope, machineId: undefined }));
+  const scopeLabel = isScopeActive(activeScope)
+    ? [scopePlant?.name, scopeFurnace?.name, scopeLines.find((line) => line.id === activeScope.lineId)?.name, findMachineNode(allTreeNodes, activeScope.machineId)?.label].filter(Boolean).join(" / ")
+    : undefined;
   const currentTreeBrowseLevel = getDeepestExpandedLevel(allTreeNodes, expandedIds);
   const selectedTreeNode = activeTreeNodeId ? findTreeNode(allTreeNodes, activeTreeNodeId) : undefined;
   const tileLevelForTreeNode = (node: PlantTreeNode): PlantTileLevel => {
@@ -469,9 +519,9 @@ export function MyPlant({ accountId, onRequestSupport }: MyPlantProps) {
   const tileFurnaces = selectedPlant?.furnaces ?? [];
   const tileLines = selectedFurnace?.lines ?? selectedPlant?.furnaces.flatMap((furnace) => furnace.lines) ?? [];
   const selectedLineTreeNode = selectedLine ? findTreeNode(plantDescendantNodes, selectedLine.id) : undefined;
-  const tileMachineNodes = selectedLineTreeNode
+  const tileMachineNodes = sortPlantNodes(selectedLineTreeNode
     ? selectedLineTreeNode.children.filter((node) => node.kind === "machine")
-    : plantDescendantNodes.filter((node) => node.kind === "machine");
+    : plantDescendantNodes.filter((node) => node.kind === "machine"), sort);
   const selectedMachineNode = selectedMachineId
     ? allTreeNodes.flatMap((plant) => plant.children)
       .flatMap((furnace) => furnace.children)
@@ -491,15 +541,58 @@ export function MyPlant({ accountId, onRequestSupport }: MyPlantProps) {
   const tileEquipmentNodes = equipmentScopeMachineNode
     ? equipmentScopeMachineNode.children.filter((node) => node.kind === "equipment" || node.kind === "assembly")
     : plantDescendantNodes.filter((node) => node.kind === "equipment");
-  const tileEquipmentGroups = equipmentScopeMachineNode
+  const tileEquipmentGroups = (equipmentScopeMachineNode
     ? groupTreeChildren(equipmentScopeMachineNode)
-    : groupEquipmentNodes(tileEquipmentNodes);
+    : groupEquipmentNodes(tileEquipmentNodes)).map((group) => ({ ...group, nodes: sortPlantNodes(group.nodes, sort) }));
   const selectedTileEquipmentNode = selectedTileEquipmentId
     ? findTreeNode(allTreeNodes, selectedTileEquipmentId)
     : selectedMachineAssemblyNode ?? selectedLineEquipmentNode ?? selectedMachineNode;
   const selectedMachineRecord = selectedMachineId ? machines.find((machine) => machine.id === selectedMachineId) : undefined;
-  const { addToCart, cart } = useTransaction();
   const { showFeedback } = useActionFeedback();
+
+  useEffect(() => {
+    writePlantUrlState({ view: viewMode, query: treeQuery, scope: activeScope, filters, sort });
+  }, [viewMode, treeQuery, activeScope.plantId, activeScope.furnaceId, activeScope.lineId, activeScope.machineId, filters, sort]);
+
+  useEffect(() => () => clearPlantUrlState(), []);
+
+  useEffect(() => {
+    const element = toolbarRef.current;
+    if (!element) return;
+    const observer = new ResizeObserver(() => setToolbarHeight(element.offsetHeight));
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
+  function applyScope(scope: PlantScope) {
+    setSelectedResultId(undefined);
+    setLocationFilter(scope);
+    if (viewMode === "tree") setExpandedIds(new Set(getRevealIds(allTreeNodes, scope)));
+  }
+
+  function changeScope(level: PlantScopeLevel, id?: string) {
+    if (level === "plant") return applyScope({ plantId: id });
+    if (level === "furnace") return applyScope({ plantId: activeScope.plantId, furnaceId: id });
+    if (level === "line") {
+      const furnaceId = id ? scopePlant?.furnaces.find((furnace) => furnace.lines.some((line) => line.id === id))?.id : activeScope.furnaceId;
+      return applyScope({ plantId: activeScope.plantId, furnaceId, lineId: id });
+    }
+    const machineNode = findMachineNode(allTreeNodes, id);
+    applyScope(machineNode
+      ? { plantId: machineNode.plantId, furnaceId: machineNode.furnaceId, lineId: machineNode.lineId, machineId: machineNode.machineId }
+      : { plantId: activeScope.plantId, furnaceId: activeScope.furnaceId, lineId: activeScope.lineId });
+  }
+
+  function clearAllFilters() {
+    setFilters(EMPTY_PLANT_FILTERS);
+    applyScope({});
+  }
+
+  const filterResultSummary = (
+    <p className="text-sm text-muted-foreground" aria-live="polite">
+      <span className="font-medium text-foreground">{filteredItemNodes.length}</span> {filteredItemNodes.length === 1 ? "item matches" : "items match"} your filters
+    </p>
+  );
 
   function updateCurrentTreeLevel(element: HTMLDivElement) {
     const stickyHeaderBottom = element.getBoundingClientRect().top + (treeHeaderRef.current?.offsetHeight ?? 0);
@@ -624,6 +717,11 @@ export function MyPlant({ accountId, onRequestSupport }: MyPlantProps) {
     setSelectedEquipmentId(node.equipment?.id);
   }
 
+  function revealTreeNode(node: PlantTreeNode) {
+    selectTreeNode(node);
+    setExpandedIds((current) => new Set([...current, ...getRevealIds(allTreeNodes, node)]));
+  }
+
   function selectHierarchySearchResult(node: PlantTreeNode) {
     setActiveTreeNodeId(node.id);
     if (viewMode === "tree") {
@@ -743,43 +841,37 @@ export function MyPlant({ accountId, onRequestSupport }: MyPlantProps) {
   }
 
   return (
-    <section className="space-y-6">
+    <section className="space-y-6" style={{ "--plant-toolbar-h": `${toolbarHeight}px` } as CSSProperties}>
       <header className="space-y-3">
         <h1 className="text-3xl font-semibold tracking-tight">My Plant</h1>
-        <div className="flex items-start gap-3">
-          <div className="relative min-w-0 flex-1">
-            <Search className="pointer-events-none absolute left-3 top-2.5 size-4 text-muted-foreground" />
-            <Input
-              aria-label="Search plant hierarchy"
-              aria-controls={viewMode === "tiles" && normalizedQuery ? "plant-search-results" : undefined}
-              aria-autocomplete="list"
-              className="pl-9"
-              placeholder="Search plants, furnaces, lines, equipment, parts..."
-              value={treeQuery}
-              onChange={(event) => setTreeQuery(event.target.value)}
-            />
-            {viewMode === "tiles" && normalizedQuery && (
-              <div id="plant-search-results" className="absolute inset-x-0 top-full z-30 mt-1 max-h-80 overflow-y-auto border bg-background shadow-lg" aria-label="Plant hierarchy search results">
-                {tileSearchResults.length ? tileSearchResults.slice(0, 12).map((node) => (
-                  <button type="button" key={`${node.kind}-${node.id}`} className="flex w-full items-start justify-between gap-4 border-b px-3 py-2 text-left last:border-b-0 hover:bg-accent" onClick={() => selectHierarchySearchResult(node)}>
-                    <span className="min-w-0">
-                      <span className="block truncate text-sm font-medium">{node.label}</span>
-                      <span className="block truncate text-xs text-muted-foreground">{node.path.join(" / ")}</span>
-                    </span>
-                    <Badge variant="outline" className="shrink-0">{node.kind === "equipment" ? "Equipment" : node.kind}</Badge>
-                  </button>
-                )) : <p className="px-3 py-4 text-sm text-muted-foreground">No hierarchy items match this search.</p>}
-              </div>
-            )}
-          </div>
-          <div className="inline-flex shrink-0 items-center gap-1" role="group" aria-label="Plant view">
-            <Button type="button" size="icon" className="size-8" variant={viewMode === "tiles" ? "secondary" : "ghost"} aria-label="Tiles view" title="Tiles view" aria-pressed={viewMode === "tiles"} onClick={() => changeViewMode("tiles")}><LayoutGrid className="size-4" /></Button>
-            <Button type="button" size="icon" className="size-8" variant={viewMode === "tree" ? "secondary" : "ghost"} aria-label="Tree view" title="Tree view" aria-pressed={viewMode === "tree"} onClick={() => changeViewMode("tree")}><ListTree className="size-4" /></Button>
-          </div>
-        </div>
+        {viewMode === "tiles" && !filtersActive && tileBrowseLevel === "plant" && <PlantLocationMap plantRecords={tenantPlants} onSelect={openPlant} />}
       </header>
 
-      {!(viewMode === "tiles" && tileBrowseLevel === "plant") && <nav aria-label="Plant levels" className="flex items-center gap-2">
+      <div ref={toolbarRef} className="sticky top-[5.05rem] z-20 bg-background">
+        <PlantToolbar
+          query={treeQuery}
+          onQueryChange={setTreeQuery}
+          searchResults={viewMode === "tiles" && normalizedQuery ? tileSearchResults : undefined}
+          onSelectSearchResult={selectHierarchySearchResult}
+          viewMode={viewMode}
+          onViewModeChange={changeViewMode}
+          sort={sort}
+          onSortChange={setSort}
+          scope={activeScope}
+          scopeLabel={scopeLabel}
+          plantOptions={tenantPlants.map((plant) => ({ id: plant.id, label: plant.name }))}
+          furnaceOptions={scopePlant?.furnaces.map((furnace) => ({ id: furnace.id, label: furnace.name })) ?? []}
+          lineOptions={scopeLines.map((line) => ({ id: line.id, label: line.name }))}
+          machineOptions={scopeMachineNodes.map((node) => ({ id: node.machineId as string, label: node.label }))}
+          onScopeChange={changeScope}
+          filters={filters}
+          onFiltersChange={(next) => { setFilters(next); setSelectedResultId(undefined); }}
+          counts={facetCounts}
+          onClear={clearAllFilters}
+        />
+      </div>
+
+      {!(viewMode === "tiles" && (tileBrowseLevel === "plant" || filtersActive)) && <nav aria-label="Plant levels" className="flex items-center gap-2">
         <Button type="button" size="icon" variant={(viewMode === "tiles" ? tileBrowseLevel : currentTreeBrowseLevel) === "plant" ? "secondary" : "ghost"} aria-label="Plant level" title="Plant" aria-current={(viewMode === "tiles" ? tileBrowseLevel : currentTreeBrowseLevel) === "plant" ? "step" : undefined} onClick={() => navigatePlantLevel("plant")}><Factory className="size-4" /></Button>
         <span aria-hidden="true" className="h-px w-5 bg-border" />
         <Button type="button" size="icon" variant={(viewMode === "tiles" ? tileBrowseLevel : currentTreeBrowseLevel) === "furnace" ? "secondary" : "ghost"} aria-label="Furnace level" title="Furnace" aria-current={(viewMode === "tiles" ? tileBrowseLevel : currentTreeBrowseLevel) === "furnace" ? "step" : undefined} disabled={viewMode === "tiles" && !selectedPlant} onClick={() => navigatePlantLevel("furnace")}><Flame className="size-4" /></Button>
@@ -791,8 +883,10 @@ export function MyPlant({ accountId, onRequestSupport }: MyPlantProps) {
         <Button type="button" size="icon" variant={(viewMode === "tiles" ? tileBrowseLevel : currentTreeBrowseLevel) === "equipment" ? "secondary" : "ghost"} aria-label="Equipment level" title="Equipment" aria-current={(viewMode === "tiles" ? tileBrowseLevel : currentTreeBrowseLevel) === "equipment" ? "step" : undefined} disabled={viewMode === "tiles" && !selectedPlant} onClick={() => navigatePlantLevel("equipment")}><Wrench className="size-4" /></Button>
       </nav>}
 
+      {viewMode === "tree" && filtersActive && filterResultSummary}
+
       {viewMode === "tree" && <section className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.5fr)_minmax(18rem,0.8fr)]">
-        <div ref={treeScrollRef} onScroll={handleTreeScroll} className="max-h-[calc(100vh-14rem)] min-h-0 overflow-y-auto border bg-card">
+        <div ref={treeScrollRef} onScroll={handleTreeScroll} className="max-h-[calc(100vh-8rem-var(--plant-toolbar-h))] min-h-0 overflow-y-auto border bg-card">
           <Card className="rounded-none border-0 shadow-none">
             {treeHasScrolled && <CardHeader ref={treeHeaderRef} className="sticky top-0 z-20 border-b bg-card py-3">
               <nav aria-label="Plant hierarchy" aria-live="polite" className="flex items-center gap-2 py-2 text-sm">
@@ -804,60 +898,56 @@ export function MyPlant({ accountId, onRequestSupport }: MyPlantProps) {
                 ))}
               </nav>
             </CardHeader>}
-            <CardContent className="p-0">{treeNodes.length ? treeNodes.map((node) => <PlantTreeBranch key={node.id} node={node} depth={0} query={normalizedQuery} expandedIds={expandedIds} activeId={activeTreeNodeId} cart={cart} onToggle={toggleTreeNode} onSelect={selectTreeNode} />) : <p className="p-5 text-sm text-muted-foreground">No hierarchy items match this search.</p>}</CardContent>
+            <CardContent className="p-0">{treeNodes.length ? treeNodes.map((node) => <PlantTreeBranch key={node.id} node={node} depth={0} autoExpand={Boolean(normalizedQuery) || attributeFiltersActive} expandedIds={expandedIds} activeId={activeTreeNodeId} cart={cart} onToggle={toggleTreeNode} onSelect={selectTreeNode} />) : <p className="p-5 text-sm text-muted-foreground">No hierarchy items match this search.</p>}</CardContent>
           </Card>
         </div>
-        <PlantTreeDetails node={selectedTreeNode} onAddPart={addTreePartToCart} onAddEquipment={addTreeEquipmentToCart} onRequestSupport={onRequestSupport} />
+        <PlantTreeDetails node={selectedTreeNode} onAddPart={addTreePartToCart} onAddEquipment={addTreeEquipmentToCart} onRequestSupport={onRequestSupport} onSelectChild={revealTreeNode} />
       </section>}
 
-      {viewMode === "tiles" && selectedPlant && <nav aria-label="Plant hierarchy" className="sticky top-[5.05rem] z-20 flex items-center gap-2 border-b bg-background/95 py-2 text-sm backdrop-blur">
-        <button className={!selectedPlant ? "font-semibold text-foreground" : "text-muted-foreground hover:text-foreground"} onClick={() => { setSelectedPlantId(undefined); setSelectedFurnaceId(undefined); setSelectedLineId(undefined); setSelectedMachineId(undefined); setSelectedMachineAssemblyId(undefined); setSelectedEquipmentId(undefined); }}>My Plant</button>
+      {viewMode === "tiles" && !filtersActive && selectedPlant && <nav aria-label="Plant hierarchy" className="sticky top-[calc(5.05rem+var(--plant-toolbar-h))] z-10 flex items-center gap-2 border-b bg-background/95 py-2 text-sm backdrop-blur">
+        <button className={!selectedPlant ? "font-semibold text-foreground" : "text-muted-foreground hover:text-foreground"} onClick={() => navigateTileLevel("plant")}>My Plant</button>
         {selectedPlant && <><span className="text-muted-foreground">/</span><button className={!selectedFurnace ? "font-semibold text-foreground" : "text-muted-foreground hover:text-foreground"} onClick={() => { setSelectedFurnaceId(undefined); setSelectedLineId(undefined); setSelectedMachineId(undefined); setSelectedMachineAssemblyId(undefined); setSelectedEquipmentId(undefined); }}>{selectedPlant.name}</button></>}
         {selectedFurnace && <><span className="text-muted-foreground">/</span><button className={!selectedLine ? "font-semibold text-foreground" : "text-muted-foreground hover:text-foreground"} onClick={() => { setSelectedLineId(undefined); setSelectedMachineId(undefined); setSelectedMachineAssemblyId(undefined); setSelectedEquipmentId(undefined); }}>{selectedFurnace.name}</button></>}
         {selectedLine && <><span className="text-muted-foreground">/</span><button className={!selectedMachineId ? "font-semibold text-foreground" : "text-muted-foreground hover:text-foreground"} onClick={() => { setSelectedMachineId(undefined); setSelectedMachineAssemblyId(undefined); }}>{selectedLine.name}</button></>}
         {selectedMachineRecord && <><span className="text-muted-foreground">/</span><span className="font-semibold">{selectedMachineRecord.name}</span></>}
       </nav>}
 
-      {viewMode === "tiles" && tileBrowseLevel === "plant" && (
+      {viewMode === "tiles" && !filtersActive && tileBrowseLevel === "plant" && (
         <div className="grid gap-4 xl:grid-cols-3">
             {tenantPlants.map((plant) => <button type="button" key={plant.id} className="group overflow-hidden rounded border bg-card text-left transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => openPlant(plant)}><div className="flex h-36 items-center justify-center border-b bg-muted/40"><Factory className="size-10 text-muted-foreground" /></div><div className="space-y-4 p-5"><div><h3 className="font-semibold">{plant.name}</h3><p className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground"><MapPin className="size-3.5" />{plant.location}</p></div><div className="flex items-center justify-between"><Badge variant="outline">{plant.furnaces.length} furnaces</Badge><ArrowRight className="size-4 transition-transform group-hover:translate-x-1" /></div></div></button>)}
         </div>
       )}
 
-      {viewMode === "tiles" && tileBrowseLevel === "furnace" && selectedPlant && (
-        <section className="space-y-4">
-          <div><h2 className="text-lg font-semibold">Furnaces</h2><p className="text-sm text-muted-foreground">{selectedPlant.name}</p></div>
+      {viewMode === "tiles" && !filtersActive && tileBrowseLevel === "furnace" && selectedPlant && (
+        <section>
           {tileFurnaces.length ? <div className="grid gap-3 md:grid-cols-2">{tileFurnaces.map((furnace) => <button key={furnace.id} className="flex items-center justify-between border bg-background p-5 text-left hover:bg-accent" onClick={() => openFurnace(furnace)}><span className="flex items-center gap-3"><Flame className="size-5 text-muted-foreground" /><span><span className="block font-medium">{furnace.name}</span><span className="text-sm text-muted-foreground">{furnace.lines.length} lines</span></span></span><ArrowRight className="size-4" /></button>)}</div> : <p className="border p-6 text-sm text-muted-foreground">No furnaces are listed for this plant.</p>}
         </section>
       )}
 
-      {viewMode === "tiles" && tileBrowseLevel === "line" && selectedPlant && (
-        <section className="space-y-4">
-          <div><h2 className="text-lg font-semibold">Production lines</h2><p className="text-sm text-muted-foreground">{selectedPlant.name}{selectedFurnace ? ` · ${selectedFurnace.name}` : " · all furnaces"}</p></div>
+      {viewMode === "tiles" && !filtersActive && tileBrowseLevel === "line" && selectedPlant && (
+        <section>
           {tileLines.length ? <div className="grid gap-3 md:grid-cols-2">{tileLines.map((line) => <button key={line.id} className="flex items-center justify-between border bg-background p-5 text-left hover:bg-accent" onClick={() => openLine(line)}><span className="flex items-center gap-3"><Rows3 className="size-5 text-muted-foreground" /><span><span className="block font-medium">{line.name}</span><span className="text-sm text-muted-foreground">{line.equipment.filter((equipment) => equipment.equipmentType === "Machine").length} machines · {line.equipment.filter((equipment) => equipment.equipmentType !== "Machine").length} other equipment</span></span></span><ArrowRight className="size-4" /></button>)}</div> : <p className="border p-6 text-sm text-muted-foreground">No line records are included for this plant.</p>}
         </section>
       )}
 
-      {viewMode === "tiles" && tileBrowseLevel === "machine" && selectedPlant && (
-        <section className="space-y-4">
-          <div><h2 className="text-lg font-semibold">Machines</h2><p className="text-sm text-muted-foreground">{selectedPlant.name}{selectedLine ? ` · ${selectedLine.name}` : " · all production lines"}</p></div>
+      {viewMode === "tiles" && !filtersActive && tileBrowseLevel === "machine" && selectedPlant && (
+        <section>
           {tileMachineNodes.length ? <div className="grid gap-4 xl:grid-cols-2">{tileMachineNodes.map((machineNode) => {
             const equipment = machineNode.equipment;
             if (!equipment) return null;
             return <button type="button" key={machineNode.id} className="overflow-hidden border bg-card text-left transition-colors hover:bg-accent/50" onClick={() => openMachineNode(machineNode)}><div className="grid gap-4 p-4 sm:grid-cols-[9rem_minmax(0,1fr)]">{machineNode.pictureNumber && <EquipmentImagePlaceholder pictureNumber={machineNode.pictureNumber} description={machineNode.label} className="order-1 h-32 min-h-0" />}<div className="order-2 flex min-w-0 items-center justify-between gap-3"><div><p className="text-xs font-medium uppercase text-muted-foreground">Machine</p><h3 className="mt-1 font-semibold">{machineNode.label}</h3><p className="mt-1 text-sm text-muted-foreground">{equipment.objectId} · {equipment.serialNumber}</p>{!selectedLine && <p className="mt-1 text-xs text-muted-foreground">{machineNode.path.slice(1, -1).join(" · ")}</p>}{isPlantNodeInCart(machineNode, cart) && <Badge variant="secondary" className="mt-2">Already in cart</Badge>}</div><ArrowRight className="size-4 shrink-0" /></div></div></button>;
           })}</div> : <p className="border p-6 text-sm text-muted-foreground">No machines are listed for this plant.</p>}
-          {selectedLineEquipmentNode && <PlantTreeDetails node={selectedLineEquipmentNode} onAddPart={addTreePartToCart} onAddEquipment={addTreeEquipmentToCart} onRequestSupport={onRequestSupport} />}
+          {selectedLineEquipmentNode && <PlantTreeDetails node={selectedLineEquipmentNode} onAddPart={addTreePartToCart} onAddEquipment={addTreeEquipmentToCart} onRequestSupport={onRequestSupport} onSelectChild={selectTileEquipment} />}
         </section>
       )}
 
-      {viewMode === "tiles" && tileBrowseLevel === "equipment" && selectedPlant && (
+      {viewMode === "tiles" && !filtersActive && tileBrowseLevel === "equipment" && selectedPlant && (
         <section className="space-y-5">
-          <div><h2 className="text-lg font-semibold">Equipment</h2><p className="text-sm text-muted-foreground">{selectedPlant.name}{selectedMachineRecord ? ` · ${selectedMachineRecord.name}` : " · all equipment"}</p></div>
           <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.5fr)_minmax(18rem,0.8fr)]">
             <div className="space-y-5">
               {tileEquipmentGroups.map((group) => (
                 <section key={group.label} className="space-y-3">
-                  <div className="sticky top-[7.375rem] z-10 flex items-center justify-between border-b bg-background/95 py-2 backdrop-blur">
+                  <div className="sticky top-[calc(7.375rem+var(--plant-toolbar-h))] z-10 flex items-center justify-between border-b bg-background/95 py-2 backdrop-blur">
                     <h3 className="font-semibold">{group.label}</h3>
                     <span className="text-sm text-muted-foreground">{group.nodes.length}</span>
                   </div>
@@ -890,9 +980,50 @@ export function MyPlant({ accountId, onRequestSupport }: MyPlantProps) {
               ))}
               {!tileEquipmentNodes.length && <p className="border p-6 text-sm text-muted-foreground">No equipment is listed for this plant.</p>}
             </div>
-            <div className="xl:sticky xl:top-32 xl:max-h-[calc(100vh-9rem)] xl:self-start xl:overflow-y-auto">
-              <PlantTreeDetails node={selectedTileEquipmentNode} onAddPart={addTreePartToCart} onAddEquipment={addTreeEquipmentToCart} onRequestSupport={onRequestSupport} />
+            <div className="xl:sticky xl:top-[calc(6rem+var(--plant-toolbar-h))] xl:max-h-[calc(100vh-7rem-var(--plant-toolbar-h))] xl:self-start xl:overflow-y-auto">
+              <PlantTreeDetails node={selectedTileEquipmentNode} onAddPart={addTreePartToCart} onAddEquipment={addTreeEquipmentToCart} onRequestSupport={onRequestSupport} onSelectChild={selectTileEquipment} />
             </div>
+          </div>
+        </section>
+      )}
+
+      {viewMode === "tiles" && filtersActive && (
+        <section aria-label="Filtered plant items" className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.3fr)_minmax(18rem,0.9fr)]">
+          <div className="space-y-2">
+            {filterResultSummary}
+            {filteredItemNodes.length ? filteredItemNodes.map((node) => {
+              const facets = getPlantItemFacets(node);
+              return (
+                <button
+                  type="button"
+                  key={node.id}
+                  aria-pressed={selectedResultId === node.id}
+                  className={`flex w-full min-w-0 items-center gap-4 border bg-card p-3 text-left transition-colors hover:bg-accent/50 ${selectedResultId === node.id ? "border-primary bg-accent" : ""}`}
+                  onClick={() => setSelectedResultId(node.id)}
+                >
+                  {node.pictureNumber ? <EquipmentImagePlaceholder pictureNumber={node.pictureNumber} description={node.label} className="h-14 w-20 min-h-0 shrink-0 p-1" /> : <span className="flex h-14 w-20 shrink-0 items-center justify-center border bg-muted/40"><Wrench className="size-5 text-muted-foreground" /></span>}
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-xs text-muted-foreground" title={node.path.slice(0, -1).join(" / ")}>{(node.path.length > 4 ? [node.path[0], "…", ...node.path.slice(-3, -1)] : node.path.slice(0, -1)).join(" / ")}</span>
+                    <span className="block truncate font-medium">{node.label}</span>
+                    <span className="mt-1 flex flex-wrap gap-1">
+                      {facets && <Badge variant="outline">{TYPE_LABELS[facets.type]}</Badge>}
+                      {facets && <Badge variant={facets.availability === "unavailable" ? "outline" : "secondary"}>{AVAILABILITY_LABELS[facets.availability]}</Badge>}
+                      {facets?.partStatus.includes("superseded") && <Badge variant="destructive">Superseded</Badge>}
+                      {isPlantNodeInCart(node, cart) && <Badge variant="secondary">Already in cart</Badge>}
+                    </span>
+                  </span>
+                  <ArrowRight className="size-4 shrink-0" />
+                </button>
+              );
+            }) : (
+              <div className="space-y-3 border p-6 text-sm text-muted-foreground">
+                <p>No items match these filters{scopeLabel ? ` in ${scopeLabel}` : ""}.</p>
+                <Button type="button" variant="outline" size="sm" onClick={clearAllFilters}>Clear all filters</Button>
+              </div>
+            )}
+          </div>
+          <div className="xl:sticky xl:top-[calc(6rem+var(--plant-toolbar-h))] xl:max-h-[calc(100vh-7rem-var(--plant-toolbar-h))] xl:self-start xl:overflow-y-auto">
+            <PlantTreeDetails node={selectedResultNode} onAddPart={addTreePartToCart} onAddEquipment={addTreeEquipmentToCart} onRequestSupport={onRequestSupport} onSelectChild={(child) => setSelectedResultId(child.id)} />
           </div>
         </section>
       )}
