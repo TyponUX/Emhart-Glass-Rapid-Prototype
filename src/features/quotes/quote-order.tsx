@@ -19,7 +19,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { parts, services, type LineItem } from "@/data/portal-data";
+import { assemblies, parts, services, type LineItem } from "@/data/portal-data";
+import { plants } from "@/data/plant-hierarchy";
 import {
   useTransaction,
   type OrderEntry,
@@ -30,6 +31,21 @@ import { useActionFeedback } from "@/components/shared/action-feedback";
 type HubTab = "cart" | "quotes" | "orders" | "shipment";
 
 function resolveItem(item: LineItem) {
+  if (item.type === "equipment") {
+    const assembly = assemblies.find((candidate) => candidate.id === item.installedEquipmentId);
+    const plantEquipment = plants.flatMap((plant) => plant.furnaces)
+      .flatMap((furnace) => furnace.lines)
+      .flatMap((line) => line.equipment)
+      .find((candidate) => candidate.id === item.installedEquipmentId);
+    return {
+      code: assembly?.objectId ?? plantEquipment?.objectId ?? "Equipment",
+      name: assembly?.name ?? plantEquipment?.description ?? "Installed equipment",
+      price: undefined,
+      qty: 1,
+      kind: "Equipment",
+    };
+  }
+
   if (item.type === "part") {
     const part = parts.find((candidate) => candidate.id === item.partId);
     return {
@@ -91,8 +107,7 @@ function ItemRow({
       </div>
       <div className="text-right">
         <p className="text-sm font-medium">
-          {resolved.qty > 1 ? `${resolved.qty} × ` : ""}EUR{" "}
-          {resolved.price.toLocaleString()}
+          {resolved.price === undefined ? "To be quoted" : <>{resolved.qty > 1 ? `${resolved.qty} × ` : ""}EUR {resolved.price.toLocaleString()}</>}
         </p>
         {onRemove && (
           <button
@@ -286,11 +301,12 @@ export function QuoteOrder({
                 <span className="font-medium">{cart.length}</span>
               </div>
               <div className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">Estimated total</span>
+                <span className="text-muted-foreground">{cart.some((item) => item.type === "equipment") ? "Known subtotal" : "Estimated total"}</span>
                 <span className="font-medium">
                   EUR {cartTotal.toLocaleString()}
                 </span>
               </div>
+              {cart.some((item) => item.type === "equipment") && <p className="text-xs text-muted-foreground">Equipment pricing will be confirmed in the quotation.</p>}
               {!cartReady && cart.length > 0 && (
                 <p className="text-xs text-destructive">
                   Remove incompatible items before submitting.
@@ -364,8 +380,9 @@ export function QuoteOrder({
                     </div>
                     <p className="mt-1 text-xs text-muted-foreground">
                       {quote.packageName ? `${quote.packageName} · ` : ""}
-                      {quote.items.length} items · EUR{" "}
-                      {quote.total.toLocaleString()}
+                      {quote.items.length} items · {quote.items.some((item) => item.type === "equipment")
+                        ? `Known subtotal EUR ${quote.total.toLocaleString()} · equipment pricing pending`
+                        : `EUR ${quote.total.toLocaleString()}`}
                     </p>
                   </button>
                 ))
@@ -401,12 +418,13 @@ export function QuoteOrder({
                     <p className="font-medium">{selectedQuote.createdAt}</p>
                   </div>
                   <div>
-                    <p className="text-muted-foreground">Total</p>
+                    <p className="text-muted-foreground">{selectedQuote.items.some((item) => item.type === "equipment") ? "Known subtotal" : "Total"}</p>
                     <p className="font-medium">
                       EUR {selectedQuote.total.toLocaleString()}
                     </p>
                   </div>
                 </div>
+                {selectedQuote.items.some((item) => item.type === "equipment") && <p className="text-xs text-muted-foreground">Equipment pricing is pending for the final quotation.</p>}
 
                 <div className="space-y-2">
                   {selectedQuote.items.map((item) => (
@@ -554,8 +572,9 @@ export function QuoteOrder({
                       </Badge>
                     </div>
                     <p className="mt-1 text-xs text-muted-foreground">
-                      From {order.quoteNumber} · EUR{" "}
-                      {order.total.toLocaleString()}
+                      From {order.quoteNumber} · {order.items.some((item) => item.type === "equipment")
+                        ? `Known subtotal EUR ${order.total.toLocaleString()} · equipment pricing pending`
+                        : `EUR ${order.total.toLocaleString()}`}
                     </p>
                   </button>
                 ))
@@ -588,12 +607,13 @@ export function QuoteOrder({
                     <p className="font-medium">{selectedOrder.items.length}</p>
                   </div>
                   <div>
-                    <p className="text-muted-foreground">Total</p>
+                    <p className="text-muted-foreground">{selectedOrder.items.some((item) => item.type === "equipment") ? "Known subtotal" : "Total"}</p>
                     <p className="font-medium">
                       EUR {selectedOrder.total.toLocaleString()}
                     </p>
                   </div>
                 </div>
+                {selectedOrder.items.some((item) => item.type === "equipment") && <p className="text-xs text-muted-foreground">Equipment pricing is pending confirmation.</p>}
 
                 <div className="space-y-2 rounded-md border p-4">
                   <p className="text-sm font-medium">Order items</p>

@@ -136,10 +136,11 @@ export interface DocumentRecord {
 
 export interface LineItem {
   id: string;
-  type: "part" | "service";
+  type: "part" | "service" | "equipment";
   partId?: string;
   serviceId?: string;
-  equipmentId: string;
+  installedEquipmentId?: string;
+  equipmentId?: string;
   quantity?: number;
   scope?: string;
   deliveryLocation?: string;

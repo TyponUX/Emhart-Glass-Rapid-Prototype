@@ -394,7 +394,8 @@ export function getCartSubtotal(
 }
 
 export function isLineItemReady(item: LineItem): boolean {
-  return item.compatibility === "compatible" && Boolean(item.partId || item.serviceId);
+  return item.compatibility === "compatible"
+    && Boolean(item.partId || item.serviceId || item.installedEquipmentId);
 }
 
 export function canSubmitCart(cart: CartRecord): boolean {
@@ -403,7 +404,7 @@ export function canSubmitCart(cart: CartRecord): boolean {
 
 export function getCartNextAction(cart: CartRecord): string {
   if (cart.items.length === 0) {
-    return "Add a part or service to begin a quote request.";
+    return "Add a part, service, or equipment item to begin a quote request.";
   }
 
   if (!canSubmitCart(cart)) {
