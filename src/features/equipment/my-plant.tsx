@@ -1,11 +1,11 @@
-import { useEffect, useRef, useState, type CSSProperties, type UIEvent } from "react";
-import { ArrowLeft, ArrowRight, ChevronDown, ChevronRight, Cog, Download, Factory, FileText, Flame, MapPin, Minus, Plus, Rows3, ShoppingCart, Wrench } from "lucide-react";
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode, type UIEvent } from "react";
+import { ArrowLeft, ArrowRight, Boxes, ChevronDown, ChevronRight, Cog, Download, Factory, FileText, Flame, MapPin, Minus, Plus, Rows3, ShoppingCart, Wrench, X } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EquipmentImagePlaceholder } from "@/components/shared/equipment-image-placeholder";
-import { plants, type FurnaceRecord, type PlantEquipmentRecord, type PlantRecord, type ProductionLineRecord } from "@/data/plant-hierarchy";
+import { plants, type FurnaceRecord, type PlantRecord, type ProductionLineRecord } from "@/data/plant-hierarchy";
 import { assemblies, documents, machines, parts } from "@/data/portal-data";
 import type { AssemblyRecord, PartRecord } from "@/data/portal-data";
 import { useTransaction } from "@/features/quotes/transaction-context";
@@ -42,7 +42,13 @@ import {
 } from "@/lib/plant-filters";
 import { PlantToolbar, type PlantScopeLevel } from "@/features/equipment/plant-toolbar";
 
-type PlantTileLevel = "plant" | "furnace" | "line" | "machine" | "equipment";
+type PlantTileLevel = "plant" | "furnace" | "line" | "machine" | "equipment" | "mechanism";
+
+interface PlantLocation extends PlantScope {
+  level: PlantTileLevel;
+  frameId?: string;
+  itemId?: string;
+}
 
 // Simplified Australia outline; viewBox maps lon 113–154°E to x 0–100 and lat 10–44°S to y 0–83.
 const australiaMainlandPath = "M72 1.7 L74.4 9.8 L78.8 13.4 L80 17.1 L82.4 22.7 L88.3 27.1 L91.5 32.7 L97.8 42.7 L99 45.4 L94.6 55.9 L93.2 58.3 L90.2 66.1 L81.5 71 L77.8 69 L72 69.3 L62.2 60.8 L60.5 56.1 L56.1 60.5 L43.9 52.5 L21.7 58.3 L12 61 L5.1 59.5 L6.8 53.7 L3.9 45.9 L0.7 39 L2.7 29.3 L13.7 25.1 L22.4 19.5 L29.3 11 L36.8 12.2 L43.4 5.9 L57.8 5.4 L56.1 13.4 L67.3 18.5 L69.5 7.3 Z";
@@ -226,6 +232,7 @@ const TREE_EXPANSION_LEVELS: Record<PlantTileLevel, PlantTreeKind[]> = {
   line: ["plant", "furnace"],
   machine: ["plant", "furnace", "line"],
   equipment: ["plant", "furnace", "line", "machine"],
+  mechanism: ["plant", "furnace", "line", "machine", "equipment"],
 };
 
 function getExpandedIdsForLevel(nodes: PlantTreeNode[], level: PlantTileLevel): Set<string> {
@@ -241,8 +248,9 @@ function getDeepestExpandedLevel(nodes: PlantTreeNode[], expandedIds: Set<string
     furnace: "line",
     line: "machine",
     machine: "equipment",
+    equipment: "mechanism",
   };
-  const levelOrder: PlantTileLevel[] = ["plant", "furnace", "line", "machine", "equipment"];
+  const levelOrder: PlantTileLevel[] = ["plant", "furnace", "line", "machine", "equipment", "mechanism"];
   let deepestLevel: PlantTileLevel = "plant";
 
   for (const node of flattenTreeNodes(nodes)) {
@@ -288,12 +296,13 @@ function isPlantNodeInCart(node: PlantTreeNode, cart: ReturnType<typeof useTrans
   return cart.some((item) => item.type === "equipment" && item.installedEquipmentId === installedEquipmentId);
 }
 
-function PlantTreeDetails({ node, onAddPart, onAddEquipment, onRequestSupport, onSelectChild }: {
+function PlantTreeDetails({ node, onAddPart, onAddEquipment, onRequestSupport, onSelectChild, onClose }: {
   node?: PlantTreeNode;
   onAddPart: (node: PlantTreeNode, quantity: number) => void;
   onAddEquipment: (node: PlantTreeNode) => void;
   onRequestSupport: (context: { site: string; machineId: string; assemblyId?: string; partId?: string }) => void;
   onSelectChild?: (node: PlantTreeNode) => void;
+  onClose?: () => void;
 }) {
   const [quantity, setQuantity] = useState(1);
   const { cart } = useTransaction();
@@ -330,7 +339,7 @@ function PlantTreeDetails({ node, onAddPart, onAddEquipment, onRequestSupport, o
       <Card className="h-fit">
         <CardHeader>
           {node.path.length > 1 && <p className="text-xs text-muted-foreground">{node.path.slice(0, -1).join(" / ")}</p>}
-          <div className="flex items-start justify-between gap-3"><CardTitle className="text-base">{node.label}</CardTitle><Badge variant="outline">{node.kind === "equipment" ? "Equipment" : node.kind[0].toUpperCase() + node.kind.slice(1)}</Badge></div>
+          <div className="flex items-start justify-between gap-3"><CardTitle className="text-base">{node.label}</CardTitle><div className="flex shrink-0 items-center gap-1"><Badge variant="outline">{node.kind === "equipment" ? "Equipment" : node.kind[0].toUpperCase() + node.kind.slice(1)}</Badge>{onClose && <Button type="button" variant="ghost" size="icon" className="-mr-2 -mt-1 size-8" aria-label="Close details" title="Close details (Esc)" onClick={onClose}><X className="size-4" /></Button>}</div></div>
         </CardHeader>
         <CardContent className="space-y-4">
           {(node.kind === "machine" || node.kind === "equipment" || node.kind === "assembly") && node.pictureNumber && <EquipmentImagePlaceholder pictureNumber={node.pictureNumber} description={node.label} className="h-48 w-full" />}
@@ -441,6 +450,41 @@ function getTreeRowColumns(node: PlantTreeNode) {
   };
 }
 
+function DetailsSplit({ open, sticky, children, details }: { open: boolean; sticky?: boolean; children: ReactNode; details: ReactNode }) {
+  return (
+    <section className={`grid items-start transition-[grid-template-columns,column-gap] duration-300 motion-reduce:transition-none ${open ? "gap-5 xl:grid-cols-[minmax(0,1.5fr)_minmax(0,0.8fr)]" : "gap-0 xl:grid-cols-[minmax(0,1.5fr)_minmax(0,0fr)]"}`}>
+      <div className="min-w-0">{children}</div>
+      <div aria-hidden={!open} inert={!open} className={`min-w-0 overflow-x-hidden ${open ? "" : "max-xl:hidden"} ${sticky ? "xl:sticky xl:top-[calc(6rem+var(--plant-toolbar-h))] xl:max-h-[calc(100vh-7rem-var(--plant-toolbar-h))] xl:self-start xl:overflow-y-auto" : ""}`}>
+        <div className={`min-w-[18rem] transition-[translate,opacity] duration-300 motion-reduce:transition-none ${open ? "translate-x-0 opacity-100" : "translate-x-full opacity-0"}`}>{details}</div>
+      </div>
+    </section>
+  );
+}
+
+function TileItemCard({ node, selected, inCart, onSelect, onOpen }: {
+  node: PlantTreeNode;
+  selected: boolean;
+  inCart: boolean;
+  onSelect: () => void;
+  onOpen?: () => void;
+}) {
+  const columns = getTreeRowColumns(node);
+  return (
+    <div className={`flex min-w-0 overflow-hidden border bg-card transition-colors ${selected ? "border-primary bg-accent" : ""}`}>
+      <button type="button" aria-pressed={selected} className="flex min-w-0 flex-1 items-center gap-4 p-4 text-left hover:bg-accent/50" onClick={onSelect}>
+        {node.pictureNumber ? <EquipmentImagePlaceholder pictureNumber={node.pictureNumber} description={node.label} className="h-20 w-28 min-h-0 shrink-0" /> : <span className="flex h-20 w-28 shrink-0 items-center justify-center border bg-muted/40"><Wrench className="size-5 text-muted-foreground" /></span>}
+        <span className="min-w-0 flex-1">
+          <span className="block text-xs font-medium uppercase text-muted-foreground">{columns.equipmentType}</span>
+          <span className="mt-0.5 block font-medium">{node.label}</span>
+          <span className="mt-1 block text-xs text-muted-foreground">{columns.objectId} · {columns.serialNumber}</span>
+          {inCart && <Badge variant="secondary" className="mt-2">Already in cart</Badge>}
+        </span>
+      </button>
+      {onOpen && <button type="button" aria-label={`Open ${node.label}`} title={`Open ${node.label}`} className="flex w-14 shrink-0 items-center justify-center border-l hover:bg-accent" onClick={onOpen}><ArrowRight className="size-4" /></button>}
+    </div>
+  );
+}
+
 function PlantTreeColumnHeader() {
   return (
     <div className={`${TREE_COLUMNS} border-b bg-muted/40 text-xs font-semibold text-muted-foreground`}>
@@ -471,7 +515,7 @@ function PlantTreeBranch({ node, depth, autoExpand, expandedIds, activeId, cart,
 
   return (
     <div>
-      <div data-tree-level data-level-label={node.path.slice(0, -1).join(" / ") || "My Plant"} className={`${TREE_COLUMNS} min-h-8 cursor-pointer items-center border-b text-sm ${activeId === node.id ? "bg-accent" : "hover:bg-accent/50"}`} onClick={() => onSelect(node)}>
+      <div data-tree-level data-node-id={node.id} data-level-label={node.path.slice(0, -1).join(" / ") || "My Plant"} className={`${TREE_COLUMNS} min-h-8 cursor-pointer items-center border-b text-sm ${activeId === node.id ? "bg-accent" : "hover:bg-accent/50"}`} onClick={() => onSelect(node)}>
         <div className="flex min-w-0 items-center gap-1 pr-3" style={{ paddingLeft: `${depth * TREE_INDENT + 4}px` }}>
           {canToggle ? <Button type="button" variant="ghost" size="icon" className="size-6 shrink-0" aria-label={`${expanded ? "Collapse" : "Expand"} ${node.label}`} aria-expanded={expanded} onClick={(event) => { event.stopPropagation(); onToggle(node.id); }}>{expanded ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}</Button> : <span className="size-6 shrink-0" />}
           <span className="truncate text-xs text-muted-foreground" title={columns.objectId}>{columns.objectId}</span>
@@ -507,6 +551,8 @@ export function MyPlant({ accountId, onRequestSupport }: MyPlantProps) {
     ? new Set(getRevealIds(buildPlantTree(plants.filter((plant) => plant.accountId === accountId)), initialUrlState.scope))
     : new Set());
   const [activeTreeNodeId, setActiveTreeNodeId] = useState<string>();
+  const [lastExpandedId, setLastExpandedId] = useState<string>();
+  const pendingTreeScrollId = useRef<string | undefined>(undefined);
   const [currentTreePath, setCurrentTreePath] = useState("My Plant");
   const [treeHasScrolled, setTreeHasScrolled] = useState(false);
   const treeScrollRef = useRef<HTMLDivElement>(null);
@@ -521,6 +567,7 @@ export function MyPlant({ accountId, onRequestSupport }: MyPlantProps) {
   const [selectedMachineAssemblyId, setSelectedMachineAssemblyId] = useState<string>();
   const [selectedTileEquipmentId, setSelectedTileEquipmentId] = useState<string>();
   const [selectedEquipmentId, setSelectedEquipmentId] = useState<string>();
+  const [frameScopeId, setFrameScopeId] = useState<string>();
   const { addToCart, cart } = useTransaction();
   const tenantPlants = plants.filter((plant) => plant.accountId === accountId);
   const selectedPlant = tenantPlants.find((plant) => plant.id === selectedPlantId);
@@ -564,36 +611,74 @@ export function MyPlant({ accountId, onRequestSupport }: MyPlantProps) {
   const tileFurnaces = selectedPlant?.furnaces ?? [];
   const tileLines = selectedFurnace?.lines ?? selectedPlant?.furnaces.flatMap((furnace) => furnace.lines) ?? [];
   const selectedLineTreeNode = selectedLine ? findTreeNode(plantDescendantNodes, selectedLine.id) : undefined;
+  const isLineLevelEquipment = (node: PlantTreeNode) => node.kind === "machine" || (node.kind === "equipment" && Boolean(node.equipment));
   const tileMachineNodes = sortPlantNodes(selectedLineTreeNode
-    ? selectedLineTreeNode.children.filter((node) => node.kind === "machine")
-    : plantDescendantNodes.filter((node) => node.kind === "machine"), sort);
-  const selectedMachineNode = selectedMachineId
-    ? allTreeNodes.flatMap((plant) => plant.children)
-      .flatMap((furnace) => furnace.children)
-      .flatMap((line) => line.children)
-      .find((node) => node.kind === "machine" && node.machineId === selectedMachineId)
-    : undefined;
+    ? selectedLineTreeNode.children.filter(isLineLevelEquipment)
+    : plantDescendantNodes.filter(isLineLevelEquipment), sort);
   const equipmentScopeMachineNode = equipmentScopeMachineId
     ? allTreeNodes.flatMap((plant) => plant.children)
       .flatMap((furnace) => furnace.children)
       .flatMap((line) => line.children)
       .find((node) => node.kind === "machine" && node.machineId === equipmentScopeMachineId)
     : undefined;
-  const selectedMachineAssemblyNode = selectedMachineNode && selectedMachineAssemblyId
-    ? findTreeNode(selectedMachineNode.children, selectedMachineAssemblyId)
-    : undefined;
   const selectedLineEquipmentNode = selectedEquipmentId ? findTreeNode(allTreeNodes, selectedEquipmentId) : undefined;
-  const tileEquipmentNodes = equipmentScopeMachineNode
-    ? equipmentScopeMachineNode.children.filter((node) => node.kind === "equipment" || node.kind === "assembly")
-    : plantDescendantNodes.filter((node) => node.kind === "equipment");
-  const tileEquipmentGroups = (equipmentScopeMachineNode
-    ? groupTreeChildren(equipmentScopeMachineNode)
-    : groupEquipmentNodes(tileEquipmentNodes)).map((group) => ({ ...group, nodes: sortPlantNodes(group.nodes, sort) }));
-  const selectedTileEquipmentNode = selectedTileEquipmentId
-    ? findTreeNode(allTreeNodes, selectedTileEquipmentId)
-    : selectedMachineAssemblyNode ?? selectedLineEquipmentNode ?? selectedMachineNode;
+  const plantMachineNodes = plantDescendantNodes.filter((node) => node.kind === "machine");
+  const tileEquipmentNodes = equipmentScopeMachineNode ? equipmentScopeMachineNode.children : plantMachineNodes.flatMap((node) => node.children);
+  const frameScopeNode = frameScopeId ? findTreeNode(plantDescendantNodes, frameScopeId) : undefined;
+  const tileMechanismNodes = frameScopeNode ? frameScopeNode.children : plantMachineNodes.flatMap((node) => node.children).flatMap((node) => node.children);
+  const tileItemNodes = tileBrowseLevel === "mechanism" ? tileMechanismNodes : tileEquipmentNodes;
+  const tileEquipmentGroups = groupEquipmentNodes(tileItemNodes).map((group) => ({ ...group, nodes: sortPlantNodes(group.nodes, sort) }));
+  const selectedTileEquipmentNode = selectedTileEquipmentId ? findTreeNode(allTreeNodes, selectedTileEquipmentId) : undefined;
   const selectedMachineRecord = selectedMachineId ? machines.find((machine) => machine.id === selectedMachineId) : undefined;
   const { showFeedback } = useActionFeedback();
+  const mapVisible = !filtersActive && (viewMode === "tree" ? currentTreeBrowseLevel === "plant" && !normalizedQuery : tileBrowseLevel === "plant");
+  const previousMapVisible = useRef(mapVisible);
+  const [lastTreeDetailsNode, setLastTreeDetailsNode] = useState<PlantTreeNode>();
+  const treeDetailsOpen = Boolean(selectedTreeNode);
+  // Keep the last item rendered while the panel slides out.
+  const treeDetailsNode = selectedTreeNode ?? lastTreeDetailsNode;
+  const selectedTileDetailsNode = tileBrowseLevel === "machine" ? selectedLineEquipmentNode
+    : tileBrowseLevel === "equipment" || tileBrowseLevel === "mechanism" ? selectedTileEquipmentNode
+      : undefined;
+  const [lastTileDetailsNode, setLastTileDetailsNode] = useState<PlantTreeNode>();
+  const tileDetailsOpen = Boolean(selectedTileDetailsNode);
+  const tileDetailsNode = selectedTileDetailsNode ?? lastTileDetailsNode;
+  const detailsOpen = viewMode === "tree" ? treeDetailsOpen : tileDetailsOpen;
+
+  function closeDetails() {
+    if (viewMode === "tree") {
+      setActiveTreeNodeId(undefined);
+      return;
+    }
+    setSelectedEquipmentId(undefined);
+    setSelectedTileEquipmentId(undefined);
+  }
+
+  useEffect(() => {
+    if (selectedTreeNode) setLastTreeDetailsNode(selectedTreeNode);
+  }, [selectedTreeNode?.id]);
+
+  useEffect(() => {
+    if (selectedTileDetailsNode) setLastTileDetailsNode(selectedTileDetailsNode);
+  }, [selectedTileDetailsNode?.id]);
+
+  useEffect(() => {
+    if (!detailsOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !event.defaultPrevented) closeDetails();
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [viewMode, detailsOpen]);
+
+  useEffect(() => {
+    const wasVisible = previousMapVisible.current;
+    previousMapVisible.current = mapVisible;
+    if (!wasVisible || mapVisible || filtersActive) return;
+    // Wait for the map collapse transition, then bring the opened plant back into view.
+    const timer = window.setTimeout(() => window.scrollTo({ top: 0, behavior: "smooth" }), 300);
+    return () => window.clearTimeout(timer);
+  }, [mapVisible, filtersActive]);
 
   useEffect(() => {
     writePlantUrlState({ view: viewMode, query: treeQuery, scope: activeScope, filters, sort });
@@ -612,7 +697,11 @@ export function MyPlant({ accountId, onRequestSupport }: MyPlantProps) {
   function applyScope(scope: PlantScope) {
     setSelectedResultId(undefined);
     setLocationFilter(scope);
-    if (viewMode === "tree") setExpandedIds(new Set(getRevealIds(allTreeNodes, scope)));
+    if (viewMode === "tree") {
+      const revealIds = getRevealIds(allTreeNodes, scope);
+      setExpandedIds(new Set(revealIds));
+      setLastExpandedId(revealIds.at(-1));
+    }
   }
 
   function changeScope(level: PlantScopeLevel, id?: string) {
@@ -659,25 +748,111 @@ export function MyPlant({ accountId, onRequestSupport }: MyPlantProps) {
     if (viewMode === "tree" && treeScrollRef.current) updateCurrentTreeLevel(treeScrollRef.current);
   }, [treeQuery, expandedIds, viewMode, accountId, treeHasScrolled]);
 
+  function getTileLocation(): PlantLocation {
+    return {
+      level: tileBrowseLevel,
+      plantId: selectedPlantId,
+      furnaceId: selectedFurnaceId,
+      lineId: selectedLineId,
+      machineId: tileBrowseLevel === "equipment" || tileBrowseLevel === "mechanism" ? equipmentScopeMachineId : undefined,
+      frameId: tileBrowseLevel === "mechanism" ? frameScopeId : undefined,
+      itemId: tileBrowseLevel === "equipment" || tileBrowseLevel === "mechanism" ? selectedTileEquipmentId : tileBrowseLevel === "machine" ? selectedEquipmentId : undefined,
+    };
+  }
+
+  function getTreeLocation(): PlantLocation {
+    const lastExpandedNode = lastExpandedId && expandedIds.has(lastExpandedId) ? findTreeNode(allTreeNodes, lastExpandedId) : undefined;
+    const anchor = selectedTreeNode ?? lastExpandedNode;
+    if (anchor) {
+      const expanded = expandedIds.has(anchor.id);
+      const itemId = anchor === selectedTreeNode ? anchor.id : undefined;
+      const base = { plantId: anchor.plantId, furnaceId: anchor.furnaceId, lineId: anchor.lineId };
+      if (anchor.kind === "plant") return expanded ? { level: "furnace", plantId: anchor.plantId } : { level: "plant" };
+      if (anchor.kind === "furnace") return expanded ? { level: "line", ...base } : { level: "furnace", plantId: anchor.plantId };
+      if (anchor.kind === "line") return expanded ? { level: "machine", ...base } : { level: "line", plantId: anchor.plantId, furnaceId: anchor.furnaceId };
+      if (anchor.kind === "machine") return expanded ? { level: "equipment", ...base, machineId: anchor.machineId } : { level: "machine", ...base, itemId };
+      if (anchor.equipment) return { level: "machine", ...base, itemId };
+      const parentFrameId = anchor.assemblyId ? assemblies.find((assembly) => assembly.id === anchor.assemblyId)?.parentAssemblyId : undefined;
+      if (parentFrameId) return { level: "mechanism", ...base, machineId: anchor.machineId, frameId: parentFrameId, itemId };
+      if (expanded && anchor.children.length) return { level: "mechanism", ...base, machineId: anchor.machineId, frameId: anchor.id };
+      return { level: "equipment", ...base, machineId: anchor.machineId, itemId };
+    }
+    // Level icons expand whole levels; that is only unambiguous within a single plant.
+    const expandedPlants = tenantPlants.filter((plant) => expandedIds.has(plant.id));
+    if (expandedPlants.length === 1 && currentTreeBrowseLevel !== "plant") return { level: currentTreeBrowseLevel, plantId: expandedPlants[0].id };
+    return { level: "plant" };
+  }
+
+  function applyLocationToTiles(location: PlantLocation) {
+    setSelectedPlantId(location.plantId);
+    setSelectedFurnaceId(location.furnaceId);
+    setSelectedLineId(location.lineId);
+    setSelectedMachineId(location.machineId);
+    setEquipmentScopeMachineId(location.machineId);
+    setSelectedMachineAssemblyId(undefined);
+    setFrameScopeId(location.frameId);
+    setSelectedTileEquipmentId(location.level === "equipment" || location.level === "mechanism" ? location.itemId : undefined);
+    setSelectedEquipmentId(location.level === "machine" ? location.itemId : undefined);
+    setTileBrowseLevel(location.plantId ? location.level : "plant");
+    window.scrollTo({ top: 0 });
+  }
+
+  function applyLocationToTree(location: PlantLocation) {
+    if (location.level === "plant" || !location.plantId) {
+      setExpandedIds(new Set());
+      setActiveTreeNodeId(undefined);
+      setLastExpandedId(undefined);
+      return;
+    }
+    const scopeAnchor = location.level === "mechanism" ? location.frameId
+      : location.level === "equipment" ? findMachineNode(allTreeNodes, location.machineId)?.id
+      : location.level === "machine" ? location.lineId
+        : location.level === "line" ? location.furnaceId
+          : location.plantId;
+    const anchor = location.itemId ?? scopeAnchor;
+    if (!anchor) {
+      // Tile level lists everything of this kind in the plant, so open that whole level of the plant.
+      const plantNode = allTreeNodes.find((node) => node.id === location.plantId);
+      setExpandedIds(new Set(plantNode ? [plantNode.id, ...getExpandedIdsForLevel(plantNode.children, location.level)] : []));
+      setActiveTreeNodeId(undefined);
+      setLastExpandedId(undefined);
+      return;
+    }
+    const ancestors = findAncestorIds(allTreeNodes, anchor);
+    setExpandedIds(new Set(location.itemId ? ancestors : [...ancestors, anchor]));
+    setActiveTreeNodeId(anchor);
+    setLastExpandedId(location.itemId ? ancestors.at(-1) : anchor);
+    pendingTreeScrollId.current = anchor;
+  }
+
   function changeViewMode(mode: PlantViewMode) {
-    if (mode === "tiles" && selectedTreeNode) {
-      setSelectedPlantId(selectedTreeNode.plantId);
-      setSelectedFurnaceId(selectedTreeNode.furnaceId);
-      setSelectedLineId(selectedTreeNode.lineId);
-      setSelectedMachineId(selectedTreeNode.machineId);
-      setEquipmentScopeMachineId(selectedTreeNode.machineId);
-      setSelectedMachineAssemblyId(selectedTreeNode.assemblyId);
-      setSelectedTileEquipmentId(selectedTreeNode.kind === "equipment" || selectedTreeNode.kind === "assembly" || selectedTreeNode.kind === "part" ? selectedTreeNode.id : undefined);
-      setSelectedEquipmentId(selectedTreeNode.equipment?.id);
-      setTileBrowseLevel(tileLevelForTreeNode(selectedTreeNode));
+    if (mode === viewMode) return;
+    if (mode === "tiles") {
+      applyLocationToTiles(getTreeLocation());
+      if (filtersActive) setSelectedResultId(activeTreeNodeId);
+    } else {
+      applyLocationToTree(getTileLocation());
+      if (filtersActive && selectedResultId) {
+        setActiveTreeNodeId(selectedResultId);
+        setExpandedIds(new Set(findAncestorIds(allTreeNodes, selectedResultId)));
+        pendingTreeScrollId.current = selectedResultId;
+      }
     }
     setViewMode(mode);
   }
+
+  useEffect(() => {
+    const nodeId = pendingTreeScrollId.current;
+    if (viewMode !== "tree" || !nodeId) return;
+    pendingTreeScrollId.current = undefined;
+    requestAnimationFrame(() => treeScrollRef.current?.querySelector(`[data-node-id="${CSS.escape(nodeId)}"]`)?.scrollIntoView({ block: "center" }));
+  }, [viewMode, expandedIds]);
 
   function navigatePlantLevel(level: PlantTileLevel) {
     if (viewMode === "tree") {
       setTreeQuery("");
       setExpandedIds(getExpandedIdsForLevel(allTreeNodes, level));
+      setLastExpandedId(undefined);
       return;
     }
 
@@ -738,9 +913,11 @@ export function MyPlant({ accountId, onRequestSupport }: MyPlantProps) {
     setSelectedMachineAssemblyId(undefined);
     setSelectedTileEquipmentId(undefined);
     setSelectedEquipmentId(undefined);
+    setFrameScopeId(undefined);
   }
 
   function toggleTreeNode(id: string) {
+    setLastExpandedId(expandedIds.has(id) ? findAncestorIds(allTreeNodes, id).at(-1) : id);
     setExpandedIds((current) => {
       const next = new Set(current);
       if (next.has(id)) {
@@ -774,14 +951,20 @@ export function MyPlant({ accountId, onRequestSupport }: MyPlantProps) {
       return;
     }
 
+    if (node.kind !== "plant" && node.kind !== "furnace" && node.kind !== "line") {
+      selectTileEquipment(node);
+      setTreeQuery("");
+      return;
+    }
+
     setSelectedPlantId(node.plantId);
     setSelectedFurnaceId(node.furnaceId);
     setSelectedLineId(node.lineId);
     setSelectedMachineId(node.machineId);
     setEquipmentScopeMachineId(node.machineId);
     setSelectedMachineAssemblyId(node.assemblyId);
-    setSelectedTileEquipmentId(node.kind === "equipment" || node.kind === "assembly" || node.kind === "part" ? node.id : undefined);
-    setSelectedEquipmentId(node.equipment?.id);
+    setSelectedTileEquipmentId(undefined);
+    setSelectedEquipmentId(undefined);
     setTileBrowseLevel(tileLevelForTreeNode(node));
     setTreeQuery("");
   }
@@ -821,6 +1004,7 @@ export function MyPlant({ accountId, onRequestSupport }: MyPlantProps) {
     setTileBrowseLevel("furnace");
     setActiveTreeNodeId(plant.id);
     setExpandedIds(new Set([plant.id]));
+    setLastExpandedId(plant.id);
     setTreeHasScrolled(false);
   }
 
@@ -864,32 +1048,37 @@ export function MyPlant({ accountId, onRequestSupport }: MyPlantProps) {
     setSelectedPlantId(node.plantId);
     setSelectedFurnaceId(node.furnaceId);
     setSelectedLineId(node.lineId);
-    setSelectedMachineId(node.machineId);
-    setSelectedMachineAssemblyId(node.assemblyId);
-    setSelectedTileEquipmentId(node.id);
-    setSelectedEquipmentId(node.equipment?.id);
     setActiveTreeNodeId(node.id);
-    setTileBrowseLevel("equipment");
-  }
-
-  function openEquipment(equipment: PlantEquipmentRecord) {
-    if (equipment.machineId) {
-      setSelectedEquipmentId(undefined);
-      setSelectedMachineId(equipment.machineId);
-      setEquipmentScopeMachineId(equipment.machineId);
-      setSelectedMachineAssemblyId(undefined);
+    if (node.kind === "machine" || node.equipment) {
+      setSelectedMachineId(undefined);
+      setEquipmentScopeMachineId(undefined);
       setSelectedTileEquipmentId(undefined);
-      setTileBrowseLevel("equipment");
+      setSelectedEquipmentId(node.id);
+      setTileBrowseLevel("machine");
       return;
     }
-    setSelectedEquipmentId(equipment.id);
+    const parentFrameId = node.assemblyId ? assemblies.find((assembly) => assembly.id === node.assemblyId)?.parentAssemblyId : undefined;
+    setSelectedMachineId(node.machineId);
+    setEquipmentScopeMachineId(node.machineId);
+    setFrameScopeId(parentFrameId);
+    setSelectedEquipmentId(undefined);
+    setSelectedTileEquipmentId(node.id);
+    setTileBrowseLevel(parentFrameId ? "mechanism" : "equipment");
+  }
+
+  function openFrame(node: PlantTreeNode) {
+    setFrameScopeId(node.id);
+    setSelectedTileEquipmentId(undefined);
+    setTileBrowseLevel("mechanism");
   }
 
   return (
     <section className="space-y-6" style={{ "--plant-toolbar-h": `${toolbarHeight}px` } as CSSProperties}>
-      <header className="space-y-3">
+      <header>
         <h1 className="text-3xl font-semibold tracking-tight">My Plant</h1>
-        {viewMode === "tiles" && !filtersActive && tileBrowseLevel === "plant" && <PlantLocationMap plantRecords={tenantPlants} onSelect={openPlant} />}
+        <div aria-hidden={!mapVisible} inert={!mapVisible} className={`grid transition-[grid-template-rows,opacity,margin] duration-300 ${mapVisible ? "mt-3 grid-rows-[1fr] opacity-100" : "mt-0 grid-rows-[0fr] opacity-0"}`}>
+          <div className="min-h-0 overflow-hidden"><PlantLocationMap plantRecords={tenantPlants} onSelect={openPlant} /></div>
+        </div>
       </header>
 
       <div ref={toolbarRef} className="sticky top-[5.05rem] z-20 bg-background">
@@ -916,7 +1105,7 @@ export function MyPlant({ accountId, onRequestSupport }: MyPlantProps) {
         />
       </div>
 
-      {!(viewMode === "tiles" && (tileBrowseLevel === "plant" || filtersActive)) && <nav aria-label="Plant levels" className="flex items-center gap-2">
+      {!(viewMode === "tiles" && (tileBrowseLevel === "plant" || filtersActive)) && !(viewMode === "tree" && currentTreeBrowseLevel === "plant") && <nav aria-label="Plant levels" className="flex items-center gap-2">
         <Button type="button" size="icon" variant={(viewMode === "tiles" ? tileBrowseLevel : currentTreeBrowseLevel) === "plant" ? "secondary" : "ghost"} aria-label="Plant level" title="Plant" aria-current={(viewMode === "tiles" ? tileBrowseLevel : currentTreeBrowseLevel) === "plant" ? "step" : undefined} onClick={() => navigatePlantLevel("plant")}><Factory className="size-4" /></Button>
         <span aria-hidden="true" className="h-px w-5 bg-border" />
         <Button type="button" size="icon" variant={(viewMode === "tiles" ? tileBrowseLevel : currentTreeBrowseLevel) === "furnace" ? "secondary" : "ghost"} aria-label="Furnace level" title="Furnace" aria-current={(viewMode === "tiles" ? tileBrowseLevel : currentTreeBrowseLevel) === "furnace" ? "step" : undefined} disabled={viewMode === "tiles" && !selectedPlant} onClick={() => navigatePlantLevel("furnace")}><Flame className="size-4" /></Button>
@@ -926,11 +1115,13 @@ export function MyPlant({ accountId, onRequestSupport }: MyPlantProps) {
         <Button type="button" size="icon" variant={(viewMode === "tiles" ? tileBrowseLevel : currentTreeBrowseLevel) === "machine" ? "secondary" : "ghost"} aria-label="Machine level" title="Machine" aria-current={(viewMode === "tiles" ? tileBrowseLevel : currentTreeBrowseLevel) === "machine" ? "step" : undefined} disabled={viewMode === "tiles" && !selectedPlant} onClick={() => navigatePlantLevel("machine")}><Cog className="size-4" /></Button>
         <span aria-hidden="true" className="h-px w-5 bg-border" />
         <Button type="button" size="icon" variant={(viewMode === "tiles" ? tileBrowseLevel : currentTreeBrowseLevel) === "equipment" ? "secondary" : "ghost"} aria-label="Equipment level" title="Equipment" aria-current={(viewMode === "tiles" ? tileBrowseLevel : currentTreeBrowseLevel) === "equipment" ? "step" : undefined} disabled={viewMode === "tiles" && !selectedPlant} onClick={() => navigatePlantLevel("equipment")}><Wrench className="size-4" /></Button>
+        <span aria-hidden="true" className="h-px w-5 bg-border" />
+        <Button type="button" size="icon" variant={(viewMode === "tiles" ? tileBrowseLevel : currentTreeBrowseLevel) === "mechanism" ? "secondary" : "ghost"} aria-label="Section frame mechanism level" title="Section frame mechanism" aria-current={(viewMode === "tiles" ? tileBrowseLevel : currentTreeBrowseLevel) === "mechanism" ? "step" : undefined} disabled={viewMode === "tiles" && !selectedPlant} onClick={() => navigatePlantLevel("mechanism")}><Boxes className="size-4" /></Button>
       </nav>}
 
       {viewMode === "tree" && filtersActive && filterResultSummary}
 
-      {viewMode === "tree" && <section className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.5fr)_minmax(18rem,0.8fr)]">
+      {viewMode === "tree" && <DetailsSplit open={treeDetailsOpen} details={treeDetailsNode && <PlantTreeDetails node={treeDetailsNode} onAddPart={addTreePartToCart} onAddEquipment={addTreeEquipmentToCart} onRequestSupport={onRequestSupport} onSelectChild={revealTreeNode} onClose={closeDetails} />}>
         <div ref={treeScrollRef} onScroll={handleTreeScroll} className="@container max-h-[calc(100vh-8rem-var(--plant-toolbar-h))] min-h-0 overflow-y-auto border bg-card">
           <Card className="rounded-none border-0 shadow-none">
             <div ref={treeHeaderRef} className="sticky top-0 z-20 bg-card">
@@ -947,90 +1138,62 @@ export function MyPlant({ accountId, onRequestSupport }: MyPlantProps) {
             <CardContent className="p-0">{treeNodes.length ? treeNodes.map((node) => <PlantTreeBranch key={node.id} node={node} depth={0} autoExpand={Boolean(normalizedQuery) || attributeFiltersActive} expandedIds={expandedIds} activeId={activeTreeNodeId} cart={cart} onToggle={toggleTreeNode} onSelect={selectTreeNode} />) : <p className="p-5 text-sm text-muted-foreground">No hierarchy items match this search.</p>}</CardContent>
           </Card>
         </div>
-        <PlantTreeDetails node={selectedTreeNode} onAddPart={addTreePartToCart} onAddEquipment={addTreeEquipmentToCart} onRequestSupport={onRequestSupport} onSelectChild={revealTreeNode} />
-      </section>}
+      </DetailsSplit>}
 
       {viewMode === "tiles" && !filtersActive && selectedPlant && <nav aria-label="Plant hierarchy" className="sticky top-[calc(5.05rem+var(--plant-toolbar-h))] z-10 flex items-center gap-2 border-b bg-background/95 py-2 text-sm backdrop-blur">
         <button className={!selectedPlant ? "font-semibold text-foreground" : "text-muted-foreground hover:text-foreground"} onClick={() => navigateTileLevel("plant")}>My Plant</button>
         {selectedPlant && <><span className="text-muted-foreground">/</span><button className={!selectedFurnace ? "font-semibold text-foreground" : "text-muted-foreground hover:text-foreground"} onClick={() => { setSelectedFurnaceId(undefined); setSelectedLineId(undefined); setSelectedMachineId(undefined); setSelectedMachineAssemblyId(undefined); setSelectedEquipmentId(undefined); }}>{selectedPlant.name}</button></>}
         {selectedFurnace && <><span className="text-muted-foreground">/</span><button className={!selectedLine ? "font-semibold text-foreground" : "text-muted-foreground hover:text-foreground"} onClick={() => { setSelectedLineId(undefined); setSelectedMachineId(undefined); setSelectedMachineAssemblyId(undefined); setSelectedEquipmentId(undefined); }}>{selectedFurnace.name}</button></>}
         {selectedLine && <><span className="text-muted-foreground">/</span><button className={!selectedMachineId ? "font-semibold text-foreground" : "text-muted-foreground hover:text-foreground"} onClick={() => { setSelectedMachineId(undefined); setSelectedMachineAssemblyId(undefined); }}>{selectedLine.name}</button></>}
-        {selectedMachineRecord && <><span className="text-muted-foreground">/</span><span className="font-semibold">{selectedMachineRecord.name}</span></>}
+        {selectedMachineRecord && <><span className="text-muted-foreground">/</span>{tileBrowseLevel === "mechanism" && frameScopeNode ? <button className="text-muted-foreground hover:text-foreground" onClick={() => { setFrameScopeId(undefined); setSelectedTileEquipmentId(undefined); setTileBrowseLevel("equipment"); }}>{selectedMachineRecord.name}</button> : <span className="font-semibold">{selectedMachineRecord.name}</span>}</>}
+        {tileBrowseLevel === "mechanism" && frameScopeNode && <><span className="text-muted-foreground">/</span><span className="font-semibold">{frameScopeNode.label}</span></>}
       </nav>}
 
       {viewMode === "tiles" && !filtersActive && tileBrowseLevel === "plant" && (
-        <div className="grid gap-4 xl:grid-cols-3">
+        <div className="grid gap-4 xl:grid-cols-3 2xl:grid-cols-4">
             {tenantPlants.map((plant) => <button type="button" key={plant.id} className="group overflow-hidden rounded border bg-card text-left transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => openPlant(plant)}><div className="flex h-36 items-center justify-center border-b bg-muted/40"><Factory className="size-10 text-muted-foreground" /></div><div className="space-y-4 p-5"><div><h3 className="font-semibold">{plant.name}</h3><p className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground"><MapPin className="size-3.5" />{plant.location}</p></div><div className="flex items-center justify-between"><Badge variant="outline">{plant.furnaces.length} furnaces</Badge><ArrowRight className="size-4 transition-transform group-hover:translate-x-1" /></div></div></button>)}
         </div>
       )}
 
       {viewMode === "tiles" && !filtersActive && tileBrowseLevel === "furnace" && selectedPlant && (
         <section>
-          {tileFurnaces.length ? <div className="grid gap-3 md:grid-cols-2">{tileFurnaces.map((furnace) => <button key={furnace.id} className="flex items-center justify-between border bg-background p-5 text-left hover:bg-accent" onClick={() => openFurnace(furnace)}><span className="flex items-center gap-3"><Flame className="size-5 text-muted-foreground" /><span><span className="block font-medium">{furnace.name}</span><span className="text-sm text-muted-foreground">{furnace.lines.length} lines</span></span></span><ArrowRight className="size-4" /></button>)}</div> : <p className="border p-6 text-sm text-muted-foreground">No furnaces are listed for this plant.</p>}
+          {tileFurnaces.length ? <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">{tileFurnaces.map((furnace) => <button key={furnace.id} className="flex items-center justify-between border bg-background p-5 text-left hover:bg-accent" onClick={() => openFurnace(furnace)}><span className="flex items-center gap-3"><Flame className="size-5 text-muted-foreground" /><span><span className="block font-medium">{furnace.name}</span><span className="text-sm text-muted-foreground">{furnace.lines.length} lines</span></span></span><ArrowRight className="size-4" /></button>)}</div> : <p className="border p-6 text-sm text-muted-foreground">No furnaces are listed for this plant.</p>}
         </section>
       )}
 
       {viewMode === "tiles" && !filtersActive && tileBrowseLevel === "line" && selectedPlant && (
         <section>
-          {tileLines.length ? <div className="grid gap-3 md:grid-cols-2">{tileLines.map((line) => <button key={line.id} className="flex items-center justify-between border bg-background p-5 text-left hover:bg-accent" onClick={() => openLine(line)}><span className="flex items-center gap-3"><Rows3 className="size-5 text-muted-foreground" /><span><span className="block font-medium">{line.name}</span><span className="text-sm text-muted-foreground">{line.equipment.filter((equipment) => equipment.equipmentType === "Machine").length} machines · {line.equipment.filter((equipment) => equipment.equipmentType !== "Machine").length} other equipment</span></span></span><ArrowRight className="size-4" /></button>)}</div> : <p className="border p-6 text-sm text-muted-foreground">No line records are included for this plant.</p>}
+          {tileLines.length ? <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">{tileLines.map((line) => <button key={line.id} className="flex items-center justify-between border bg-background p-5 text-left hover:bg-accent" onClick={() => openLine(line)}><span className="flex items-center gap-3"><Rows3 className="size-5 text-muted-foreground" /><span><span className="block font-medium">{line.name}</span><span className="text-sm text-muted-foreground">{line.equipment.filter((equipment) => equipment.equipmentType === "Machine").length} machines · {line.equipment.filter((equipment) => equipment.equipmentType !== "Machine").length} other equipment</span></span></span><ArrowRight className="size-4" /></button>)}</div> : <p className="border p-6 text-sm text-muted-foreground">No line records are included for this plant.</p>}
         </section>
       )}
 
       {viewMode === "tiles" && !filtersActive && tileBrowseLevel === "machine" && selectedPlant && (
-        <section>
-          {tileMachineNodes.length ? <div className="grid gap-4 xl:grid-cols-2">{tileMachineNodes.map((machineNode) => {
-            const equipment = machineNode.equipment;
-            if (!equipment) return null;
-            return <button type="button" key={machineNode.id} className="overflow-hidden border bg-card text-left transition-colors hover:bg-accent/50" onClick={() => openMachineNode(machineNode)}><div className="grid gap-4 p-4 sm:grid-cols-[9rem_minmax(0,1fr)]">{machineNode.pictureNumber && <EquipmentImagePlaceholder pictureNumber={machineNode.pictureNumber} description={machineNode.label} className="order-1 h-32 min-h-0" />}<div className="order-2 flex min-w-0 items-center justify-between gap-3"><div><p className="text-xs font-medium uppercase text-muted-foreground">Machine</p><h3 className="mt-1 font-semibold">{machineNode.label}</h3><p className="mt-1 text-sm text-muted-foreground">{equipment.objectId} · {equipment.serialNumber}</p>{!selectedLine && <p className="mt-1 text-xs text-muted-foreground">{machineNode.path.slice(1, -1).join(" · ")}</p>}{isPlantNodeInCart(machineNode, cart) && <Badge variant="secondary" className="mt-2">Already in cart</Badge>}</div><ArrowRight className="size-4 shrink-0" /></div></div></button>;
-          })}</div> : <p className="border p-6 text-sm text-muted-foreground">No machines are listed for this plant.</p>}
-          {selectedLineEquipmentNode && <PlantTreeDetails node={selectedLineEquipmentNode} onAddPart={addTreePartToCart} onAddEquipment={addTreeEquipmentToCart} onRequestSupport={onRequestSupport} onSelectChild={selectTileEquipment} />}
-        </section>
+        <DetailsSplit open={tileDetailsOpen} sticky details={tileDetailsNode && <PlantTreeDetails node={tileDetailsNode} onAddPart={addTreePartToCart} onAddEquipment={addTreeEquipmentToCart} onRequestSupport={onRequestSupport} onSelectChild={selectTileEquipment} onClose={closeDetails} />}>
+          {tileMachineNodes.length ? <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">{tileMachineNodes.map((node) => (
+            <TileItemCard key={node.id} node={node} selected={selectedEquipmentId === node.id} inCart={isPlantNodeInCart(node, cart)} onSelect={() => setSelectedEquipmentId(node.id)} onOpen={node.kind === "machine" && node.children.length ? () => openMachineNode(node) : undefined} />
+          ))}</div> : <p className="border p-6 text-sm text-muted-foreground">No machines are listed for this plant.</p>}
+        </DetailsSplit>
       )}
 
-      {viewMode === "tiles" && !filtersActive && tileBrowseLevel === "equipment" && selectedPlant && (
-        <section className="space-y-5">
-          <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.5fr)_minmax(18rem,0.8fr)]">
-            <div className="space-y-5">
-              {tileEquipmentGroups.map((group) => (
-                <section key={group.label} className="space-y-3">
-                  <div className="sticky top-[calc(7.375rem+var(--plant-toolbar-h))] z-10 flex items-center justify-between border-b bg-background/95 py-2 backdrop-blur">
-                    <h3 className="font-semibold">{group.label}</h3>
-                    <span className="text-sm text-muted-foreground">{group.nodes.length}</span>
-                  </div>
-                  <div className="grid gap-3 md:grid-cols-2">
-                    {group.nodes.map((node) => {
-                      const assembly = node.assemblyId ? assemblies.find((candidate) => candidate.id === node.assemblyId) : undefined;
-                      const objectId = assembly?.objectId ?? node.equipment?.objectId;
-                      const serialNumber = assembly?.serialNumber ?? node.equipment?.serialNumber;
-                      return (
-                        <button
-                          type="button"
-                          key={node.id}
-                          aria-pressed={selectedTileEquipmentId === node.id}
-                          className={`flex min-w-0 items-center gap-4 border bg-card p-4 text-left transition-colors hover:bg-accent/50 ${selectedTileEquipmentId === node.id ? "border-primary bg-accent" : ""}`}
-                          onClick={() => selectTileEquipment(node)}
-                        >
-                          {node.pictureNumber && <EquipmentImagePlaceholder pictureNumber={node.pictureNumber} description={node.label} className="h-20 w-28 min-h-0 shrink-0" />}
-                          <span className="min-w-0 flex-1">
-                            <span className="block font-medium">{node.label}</span>
-                            <span className="mt-1 block text-xs text-muted-foreground">{objectId ?? "—"}</span>
-                            <span className="block text-xs text-muted-foreground">{serialNumber ?? "—"}</span>
-                            {isPlantNodeInCart(node, cart) && <Badge variant="secondary" className="mt-2">Already in cart</Badge>}
-                          </span>
-                          <ArrowRight className="size-4 shrink-0" />
-                        </button>
-                      );
-                    })}
-                  </div>
-                </section>
-              ))}
-              {!tileEquipmentNodes.length && <p className="border p-6 text-sm text-muted-foreground">No equipment is listed for this plant.</p>}
-            </div>
-            <div className="xl:sticky xl:top-[calc(6rem+var(--plant-toolbar-h))] xl:max-h-[calc(100vh-7rem-var(--plant-toolbar-h))] xl:self-start xl:overflow-y-auto">
-              <PlantTreeDetails node={selectedTileEquipmentNode} onAddPart={addTreePartToCart} onAddEquipment={addTreeEquipmentToCart} onRequestSupport={onRequestSupport} onSelectChild={selectTileEquipment} />
-            </div>
+      {viewMode === "tiles" && !filtersActive && (tileBrowseLevel === "equipment" || tileBrowseLevel === "mechanism") && selectedPlant && (
+        <DetailsSplit open={tileDetailsOpen} sticky details={tileDetailsNode && <PlantTreeDetails node={tileDetailsNode} onAddPart={addTreePartToCart} onAddEquipment={addTreeEquipmentToCart} onRequestSupport={onRequestSupport} onSelectChild={selectTileEquipment} onClose={closeDetails} />}>
+          <div className="space-y-5">
+            {tileEquipmentGroups.map((group) => (
+              <section key={group.label} className="space-y-3">
+                <div className="sticky top-[calc(7.375rem+var(--plant-toolbar-h))] z-10 flex items-center justify-between border-b bg-background/95 py-2 backdrop-blur">
+                  <h3 className="font-semibold">{group.label}</h3>
+                  <span className="text-sm text-muted-foreground">{group.nodes.length}</span>
+                </div>
+                <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
+                  {group.nodes.map((node) => (
+                    <TileItemCard key={node.id} node={node} selected={selectedTileEquipmentId === node.id} inCart={isPlantNodeInCart(node, cart)} onSelect={() => setSelectedTileEquipmentId(node.id)} onOpen={tileBrowseLevel === "equipment" && node.children.length ? () => openFrame(node) : undefined} />
+                  ))}
+                </div>
+              </section>
+            ))}
+            {!tileItemNodes.length && <p className="border p-6 text-sm text-muted-foreground">No equipment is listed here.</p>}
           </div>
-        </section>
+        </DetailsSplit>
       )}
 
       {viewMode === "tiles" && filtersActive && (

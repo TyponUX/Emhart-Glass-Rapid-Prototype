@@ -76,7 +76,7 @@ export function PortalShell({ route, accountId, onRouteChange, onAccountChange, 
 			</aside>
 
 			<div className={`transition-[padding] duration-200 ${navigationCollapsed ? "pl-20" : "pl-72"}`}>
-				<main className="mx-auto max-w-7xl px-8 py-8">{children}</main>
+				<main className="w-full max-w-page px-8 py-8 2xl:px-10">{children}</main>
 			</div>
 		</div>
 	);
