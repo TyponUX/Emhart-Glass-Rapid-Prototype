@@ -191,13 +191,13 @@ export function PlantToolbar({
           <FacetGroup title="Availability" selected={filters.availability} onToggle={(value) => toggle("availability", value)}
             options={(Object.keys(AVAILABILITY_LABELS) as AvailabilityFacet[]).map((value) => ({ value, label: AVAILABILITY_LABELS[value], count: counts.availability.get(value) ?? 0 }))} />
         </FilterButton>
-        <Button type="button" variant={moreCount ? "secondary" : "outline"} className="h-9 gap-1.5" aria-expanded={moreOpen} aria-controls="plant-more-filters" onClick={() => setMoreOpen((open) => !open)}>
-          <SlidersHorizontal className="size-3.5" />More filters
-          {moreCount > 0 && <Badge variant="outline" className="h-5 bg-background px-1.5">{moreCount}</Badge>}
+        <Button type="button" variant={moreCount ? "secondary" : "outline"} className="relative h-9 w-auto min-w-9 shrink-0 gap-1.5 px-2" aria-label="More filters" title="More filters" aria-expanded={moreOpen} aria-controls="plant-more-filters" onClick={() => setMoreOpen((open) => !open)}>
+          <SlidersHorizontal className="size-4" />
+          {moreCount > 0 && <Badge variant="outline" className="absolute -right-1 -top-1 h-5 min-w-5 bg-background px-1">{moreCount}</Badge>}
           <ChevronDown className={`size-3.5 opacity-60 transition-transform ${moreOpen ? "rotate-180" : ""}`} />
         </Button>
         <Select value={sort} onValueChange={(value) => onSortChange(value as PlantSortKey)}>
-          <SelectTrigger aria-label="Sort by" className="h-9 w-auto min-w-44 shrink-0 gap-2"><SelectValue /></SelectTrigger>
+          <SelectTrigger aria-label="Sort by" className="h-9 w-28 min-w-28 shrink-0 gap-1.5 rounded-none px-2"><SelectValue /></SelectTrigger>
           <SelectContent>
             {(Object.keys(SORT_LABELS) as PlantSortKey[]).map((value) => <SelectItem key={value} value={value}>{SORT_LABELS[value]}</SelectItem>)}
           </SelectContent>

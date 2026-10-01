@@ -1,5 +1,6 @@
 import { Image as ImageIcon } from "lucide-react";
 import { plantImageAssets } from "@/data/plant-image-assets";
+import { cn } from "@/lib/utils";
 
 export function EquipmentImagePlaceholder({
   pictureNumber,
@@ -17,7 +18,7 @@ export function EquipmentImagePlaceholder({
     <div
       role="img"
       aria-label={`Image ${pictureNumber} for ${description}`}
-      className={`relative flex min-h-20 flex-col items-center justify-center gap-1 overflow-hidden border bg-muted/50 p-3 text-center ${className}`}
+      className={cn("relative flex min-h-20 flex-col items-center justify-center gap-1 overflow-hidden border bg-muted/50 p-3 text-center", className)}
     >
       {imageUrl ? (
         <img src={imageUrl} alt={`Image ${pictureNumber}: ${description}`} className="h-full max-h-64 w-full object-contain" />

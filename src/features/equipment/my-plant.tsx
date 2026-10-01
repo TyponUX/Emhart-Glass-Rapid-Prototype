@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode, type UIEvent } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type UIEvent } from "react";
 import { ArrowLeft, ArrowRight, Boxes, ChevronDown, ChevronRight, Cog, Download, Factory, FileText, Flame, MapPin, Minus, Plus, Rows3, ShoppingCart, Wrench, X } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -226,6 +226,16 @@ function findTreeNode(nodes: PlantTreeNode[], id: string): PlantTreeNode | undef
   return undefined;
 }
 
+function findTreeNodePath(nodes: PlantTreeNode[], id: string, ancestors: PlantTreeNode[] = []): PlantTreeNode[] {
+  for (const node of nodes) {
+    const path = [...ancestors, node];
+    if (node.id === id) return path;
+    const found = findTreeNodePath(node.children, id, path);
+    if (found.length) return found;
+  }
+  return [];
+}
+
 const TREE_EXPANSION_LEVELS: Record<PlantTileLevel, PlantTreeKind[]> = {
   plant: [],
   furnace: ["plant"],
@@ -282,12 +292,12 @@ function groupTreeChildren(parent: PlantTreeNode): Array<{ label: string; nodes:
   return Array.from(groups, ([label, nodes]) => ({ label, nodes }));
 }
 
-function getDemoPreviousSerial(serialNumber?: string): string | undefined {
-  if (!serialNumber) return undefined;
-  const lastDigitMatch = serialNumber.match(/\d(?=\D*$)/);
-  if (!lastDigitMatch || lastDigitMatch.index === undefined) return `${serialNumber}-OLD`;
+function getDemoPreviousIdentifier(identifier?: string): string | undefined {
+  if (!identifier) return undefined;
+  const lastDigitMatch = identifier.match(/\d(?=\D*$)/);
+  if (!lastDigitMatch || lastDigitMatch.index === undefined) return `${identifier}-OLD`;
   const oldDigit = (Number(lastDigitMatch[0]) + 1) % 10;
-  return `${serialNumber.slice(0, lastDigitMatch.index)}${oldDigit}${serialNumber.slice(lastDigitMatch.index + 1)}`;
+  return `${identifier.slice(0, lastDigitMatch.index)}${oldDigit}${identifier.slice(lastDigitMatch.index + 1)}`;
 }
 
 function isPlantNodeInCart(node: PlantTreeNode, cart: ReturnType<typeof useTransaction>["cart"]): boolean {
@@ -296,8 +306,16 @@ function isPlantNodeInCart(node: PlantTreeNode, cart: ReturnType<typeof useTrans
   return cart.some((item) => item.type === "equipment" && item.installedEquipmentId === installedEquipmentId);
 }
 
-function PlantTreeDetails({ node, onAddPart, onAddEquipment, onRequestSupport, onSelectChild, onClose }: {
+type PlantDetailsTab = "general" | "consists-of" | "where-used";
+const PLANT_DETAILS_TABS: Array<{ id: PlantDetailsTab; label: string }> = [
+  { id: "general", label: "General" },
+  { id: "consists-of", label: "Consists of" },
+  { id: "where-used", label: "Where used" },
+];
+
+function PlantTreeDetails({ node, treeNodes, onAddPart, onAddEquipment, onRequestSupport, onSelectChild, onClose }: {
   node?: PlantTreeNode;
+  treeNodes: PlantTreeNode[];
   onAddPart: (node: PlantTreeNode, quantity: number) => void;
   onAddEquipment: (node: PlantTreeNode) => void;
   onRequestSupport: (context: { site: string; machineId: string; assemblyId?: string; partId?: string }) => void;
@@ -305,8 +323,12 @@ function PlantTreeDetails({ node, onAddPart, onAddEquipment, onRequestSupport, o
   onClose?: () => void;
 }) {
   const [quantity, setQuantity] = useState(1);
+  const [activeTab, setActiveTab] = useState<PlantDetailsTab>("general");
   const { cart } = useTransaction();
-  useEffect(() => setQuantity(1), [node?.id]);
+  useEffect(() => {
+    setQuantity(1);
+    setActiveTab("general");
+  }, [node?.id]);
 
   if (!node) {
     return <Card className="h-fit"><CardHeader><CardTitle className="text-base">Details</CardTitle></CardHeader><CardContent><p className="text-sm text-muted-foreground">Select an item to view its details here.</p></CardContent></Card>;
@@ -319,8 +341,11 @@ function PlantTreeDetails({ node, onAddPart, onAddEquipment, onRequestSupport, o
   const assembly = node.assemblyId && !node.partId ? assemblies.find((candidate) => candidate.id === node.assemblyId) : undefined;
   const part = node.partId ? parts.find((candidate) => candidate.id === node.partId) : undefined;
   const equipment = node.equipment;
-  const displayedSerialNumber = part ? undefined : assembly?.serialNumber ?? equipment?.serialNumber ?? machine?.serialNumber;
-  const previousSerialNumber = getDemoPreviousSerial(displayedSerialNumber);
+  const displayedObjectId = assembly?.objectId ?? equipment?.objectId ?? machine?.objectId ?? node.objectId;
+  const previousObjectId = getDemoPreviousIdentifier(displayedObjectId);
+  const objectIdDisplay = displayedObjectId && previousObjectId
+    ? <span className="inline-flex flex-wrap items-center gap-1">{previousObjectId}<ArrowRight className="size-3 shrink-0" aria-label="replaced by" />{displayedObjectId}</span>
+    : displayedObjectId;
   const cartItemAdded = cart.some((item) => part
     ? item.type === "part" && item.partId === part.id
     : item.type === "equipment" && item.installedEquipmentId === (node.assemblyId ?? equipment?.id ?? node.machineId ?? node.id));
@@ -332,43 +357,65 @@ function PlantTreeDetails({ node, onAddPart, onAddEquipment, onRequestSupport, o
   const supportMachineId = node.machineId ?? equipment?.machineId;
   const supportSite = supportMachineId ? machines.find((candidate) => candidate.id === supportMachineId)?.site ?? plant?.name ?? "" : plant?.name ?? "";
   const nodeDocuments = getPlantNodeDocuments(node, documents);
-  const childGroups = node.kind === "equipment" || node.kind === "assembly" ? groupTreeChildren(node) : [];
+  const childGroups = node.children.length ? groupTreeChildren(node) : [];
+  const whereUsedNodes = findTreeNodePath(treeNodes, node.id).slice(0, -1).reverse();
+
+  function handleTabKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
+    const tabs = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>("[role='tab']"));
+    const currentIndex = tabs.indexOf(document.activeElement as HTMLButtonElement);
+    const nextIndex = event.key === "ArrowRight" ? (currentIndex + 1) % tabs.length
+      : event.key === "ArrowLeft" ? (currentIndex - 1 + tabs.length) % tabs.length
+        : event.key === "Home" ? 0
+          : event.key === "End" ? tabs.length - 1
+            : -1;
+    if (nextIndex < 0) return;
+    event.preventDefault();
+    tabs[nextIndex].focus();
+    tabs[nextIndex].click();
+  }
 
   return (
     <div className="space-y-4">
       <Card className="h-fit">
         <CardHeader>
-          {node.path.length > 1 && <p className="text-xs text-muted-foreground">{node.path.slice(0, -1).join(" / ")}</p>}
           <div className="flex items-start justify-between gap-3"><CardTitle className="text-base">{node.label}</CardTitle><div className="flex shrink-0 items-center gap-1"><Badge variant="outline">{node.kind === "equipment" ? "Equipment" : node.kind[0].toUpperCase() + node.kind.slice(1)}</Badge>{onClose && <Button type="button" variant="ghost" size="icon" className="-mr-2 -mt-1 size-8" aria-label="Close details" title="Close details (Esc)" onClick={onClose}><X className="size-4" /></Button>}</div></div>
         </CardHeader>
         <CardContent className="space-y-4">
-          {(node.kind === "machine" || node.kind === "equipment" || node.kind === "assembly") && node.pictureNumber && <EquipmentImagePlaceholder pictureNumber={node.pictureNumber} description={node.label} className="h-48 w-full" />}
+          <div role="tablist" aria-label={`${node.label} details`} className="flex gap-1 border-b" onKeyDown={handleTabKeyDown}>
+            {PLANT_DETAILS_TABS.map((tab) => <Button key={tab.id} type="button" role="tab" id={`plant-details-tab-${tab.id}`} aria-controls={`plant-details-panel-${tab.id}`} aria-selected={activeTab === tab.id} tabIndex={activeTab === tab.id ? 0 : -1} variant="ghost" className={`h-9 rounded-none border-b-2 px-3 ${activeTab === tab.id ? "border-primary font-semibold" : "border-transparent text-muted-foreground"}`} onClick={() => setActiveTab(tab.id)}>{tab.label}</Button>)}
+          </div>
+          <div id={`plant-details-panel-${activeTab}`} role="tabpanel" aria-labelledby={`plant-details-tab-${activeTab}`} tabIndex={0} className="space-y-4 outline-none">
+          {activeTab === "general" && <>
+          {(node.kind === "machine" || node.kind === "equipment" || node.kind === "assembly") && node.pictureNumber && <EquipmentImagePlaceholder pictureNumber={node.pictureNumber} description={node.label} className="h-64 w-full min-h-0 border-0 bg-white p-0" />}
           {node.kind === "plant" && <dl className="grid grid-cols-2 gap-3 text-sm"><div><dt className="text-muted-foreground">Location</dt><dd className="font-medium">{plant?.location}</dd></div><div><dt className="text-muted-foreground">Furnaces</dt><dd className="font-medium">{plant?.furnaces.length ?? 0}</dd></div></dl>}
           {node.kind === "furnace" && <dl className="grid grid-cols-2 gap-3 text-sm"><div><dt className="text-muted-foreground">Plant</dt><dd className="font-medium">{plant?.name}</dd></div><div><dt className="text-muted-foreground">Lines</dt><dd className="font-medium">{furnace?.lines.length ?? 0}</dd></div></dl>}
           {node.kind === "line" && <dl className="grid grid-cols-2 gap-3 text-sm"><div><dt className="text-muted-foreground">Furnace</dt><dd className="font-medium">{furnace?.name}</dd></div><div><dt className="text-muted-foreground">Machines</dt><dd className="font-medium">{line?.equipment.filter((item) => item.equipmentType === "Machine").length ?? 0}</dd></div><div><dt className="text-muted-foreground">Other equipment</dt><dd className="font-medium">{line?.equipment.filter((item) => item.equipmentType !== "Machine").length ?? 0}</dd></div></dl>}
-          {equipment && <dl className="grid grid-cols-2 gap-3 text-sm">{[["Object ID", equipment.objectId], ["Equipment type", equipment.equipmentType], ["Serial number", equipment.serialNumber], ["Manufactured date", equipment.manufacturedDate], ["Installation date", equipment.installationDate]].map(([label, value]) => <div key={label}><dt className="text-muted-foreground">{label}</dt><dd className="font-medium">{value}</dd></div>)}</dl>}
+          {equipment && <dl className="grid grid-cols-2 gap-3 text-sm">{[["Object ID", equipment.objectId], ["Equipment type", equipment.equipmentType], ["Serial number", equipment.serialNumber], ["Manufactured date", equipment.manufacturedDate], ["Installation date", equipment.installationDate]].map(([label, value]) => <div key={label}><dt className="text-muted-foreground">{label}</dt><dd className="font-medium">{label === "Object ID" ? objectIdDisplay : value}</dd></div>)}</dl>}
           {machine && !node.partId && <p className="text-sm">{machine.model} · {machine.serialNumber}</p>}
-          {assembly && <><p className="text-sm text-muted-foreground">{assembly.description}</p><dl className="grid grid-cols-2 gap-3 text-sm">{[["Equipment type", assembly.equipmentType], ["Object ID", assembly.objectId], ["Serial number", assembly.serialNumber], ["Manufactured date", assembly.manufacturedDate]].filter(([, value]) => value).map(([label, value]) => <div key={label}><dt className="text-muted-foreground">{label}</dt><dd className="font-medium">{value}</dd></div>)}</dl></>}
+          {assembly && <><p className="text-sm text-muted-foreground">{assembly.description}</p><dl className="grid grid-cols-2 gap-3 text-sm">{[["Equipment type", assembly.equipmentType], ["Object ID", assembly.objectId], ["Serial number", assembly.serialNumber], ["Manufactured date", assembly.manufacturedDate]].filter(([, value]) => value).map(([label, value]) => <div key={label}><dt className="text-muted-foreground">{label}</dt><dd className="font-medium">{label === "Object ID" ? objectIdDisplay : value}</dd></div>)}</dl></>}
           {(node.kind === "machine" || node.kind === "equipment" || node.kind === "assembly") && !part && <dl className="grid grid-cols-2 gap-3 text-sm">
             <div><dt className="font-medium text-muted-foreground">Compatible with</dt><dd className="font-medium">{compatibleMachines.length ? compatibleMachines.map((candidate) => candidate.name).join(", ") : "Parent machine / line equipment"}</dd></div>
+          </dl>}
+          {(node.kind === "machine" || node.kind === "equipment" || node.kind === "assembly") && !part && <div className="border-t pt-3"><dl className="grid grid-cols-2 gap-3 text-sm">
             <div><dt className="font-medium text-muted-foreground">Estimated delivery</dt><dd className="font-medium">{availableCount > 0 ? DEMO_EQUIPMENT_LEAD_TIME : "Unavailable"}</dd></div>
             <div><dt className="font-medium text-muted-foreground">Available now</dt><dd className={`font-medium ${availableCount >= 1 && availableCount <= 9 ? "text-green-700" : ""}`}>{availableCount} units</dd></div>
             <div><dt className="font-medium text-muted-foreground">Price</dt><dd className="font-medium">EUR {DEMO_EQUIPMENT_PRICE.toLocaleString()}</dd></div>
-            {displayedSerialNumber && previousSerialNumber && <div className="col-span-2 border-t pt-2"><dt className="font-medium text-muted-foreground">Serial number change</dt><dd className="font-medium">{previousSerialNumber} <ArrowRight className="mx-1 inline size-3" /> {displayedSerialNumber}</dd></div>}
             {cartItemAdded && <div className="col-span-2"><Badge variant="secondary">Already in cart</Badge></div>}
-          </dl>}
+          </dl></div>}
           {part && <>
-            <div className="aspect-[16/9] overflow-hidden border bg-muted"><img src={part.imageUrl} alt={part.name} className="h-full w-full object-contain" /></div>
+            <div className="flex h-64 w-full items-center justify-center overflow-hidden bg-white"><img src={part.imageUrl} alt={part.name} className="h-full w-full object-contain" /></div>
             <p className="text-sm text-muted-foreground">Part number</p>
             <p className="font-semibold">{part.partNumber}</p>
             <p className="text-sm text-muted-foreground">{part.description}</p>
             <dl className="grid grid-cols-2 gap-3 text-sm">
-              <div><dt className="font-medium text-muted-foreground">Availability</dt><dd className="font-medium">{part.availability}</dd></div>
               <div><dt className="font-medium text-muted-foreground">Compatible with</dt><dd className="font-medium">{compatibleMachines.length ? compatibleMachines.map((candidate) => candidate.name).join(", ") : "No compatible machines listed"}</dd></div>
+            </dl>
+            <div className="border-t pt-3"><dl className="grid grid-cols-2 gap-3 text-sm">
+              <div><dt className="font-medium text-muted-foreground">Availability</dt><dd className="font-medium">{part.availability}</dd></div>
               <div><dt className="font-medium text-muted-foreground">Estimated delivery</dt><dd className="font-medium">{part.leadTime}</dd></div>
               <div><dt className="font-medium text-muted-foreground">Available now</dt><dd className={`font-medium ${availableCount >= 1 && availableCount <= 9 ? "text-green-700" : ""}`}>{availableCount} units</dd></div>
               <div><dt className="font-medium text-muted-foreground">Price</dt><dd className="font-medium">{part.currency} {part.unitPrice.toLocaleString()} / unit</dd></div>
-            </dl>
+            </dl></div>
             {cartItemAdded && <Badge variant="secondary">Already in cart</Badge>}
             <div className="flex flex-wrap items-center gap-3">
               <div className="flex items-center gap-2">
@@ -387,27 +434,35 @@ function PlantTreeDetails({ node, onAddPart, onAddEquipment, onRequestSupport, o
               <Button className="ml-auto" onClick={() => onAddEquipment(node)} disabled={availableCount === 0}><ShoppingCart className="mr-2 size-4" />{cartItemAdded ? "Add another" : "Add to Cart"}</Button>
             </div>
           )}
+          </>}
+          {activeTab === "consists-of" && (childGroups.length ? childGroups.map((group) => (
+            <section key={group.label} className="space-y-1">
+              <h3 className="border-b pb-2 text-sm font-semibold">{group.label} · {group.nodes.length}</h3>
+              <div>
+                {group.nodes.map((child) => {
+                  const facets = getPlantItemFacets(child);
+                  return (
+                    <button type="button" key={child.id} className="flex w-full items-center justify-between gap-3 border-b px-2 py-2 text-left last:border-b-0 hover:bg-accent" onClick={() => onSelectChild?.(child)} disabled={!onSelectChild}>
+                      <span className="min-w-0"><span className="block truncate text-sm font-medium">{child.label}</span><span className="block text-xs text-muted-foreground">{child.detail}</span></span>
+                      {facets && <Badge variant={facets.availability === "unavailable" ? "outline" : "secondary"} className="shrink-0">{AVAILABILITY_LABELS[facets.availability]}</Badge>}
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+          )) : <p className="text-sm text-muted-foreground">No subcomponents are listed for this item.</p>)}
+          {activeTab === "where-used" && (whereUsedNodes.length ? <ol className="space-y-3">{whereUsedNodes.map((parent) => (
+            <li key={parent.id} className="border-b pb-3 last:border-b-0 last:pb-0">
+              <p className="text-xs font-medium uppercase text-muted-foreground">{parent.kind === "equipment" ? parent.equipmentType ?? "Equipment" : parent.kind}</p>
+              <p className="text-sm font-medium">{parent.label}</p>
+              {parent.detail && <p className="text-xs text-muted-foreground">{parent.detail}</p>}
+            </li>
+          ))}</ol> : <p className="text-sm text-muted-foreground">This is a top-level item and has no parent location.</p>)}
+          </div>
         </CardContent>
       </Card>
 
-      {childGroups.map((group) => (
-        <Card key={group.label}>
-          <CardHeader><CardTitle className="text-base">{group.label} · {group.nodes.length}</CardTitle></CardHeader>
-          <CardContent className="space-y-1 p-0 pb-2">
-            {group.nodes.map((child) => {
-              const facets = getPlantItemFacets(child);
-              return (
-                <button type="button" key={child.id} className="flex w-full items-center justify-between gap-3 px-6 py-2 text-left hover:bg-accent" onClick={() => onSelectChild?.(child)} disabled={!onSelectChild}>
-                  <span className="min-w-0"><span className="block truncate text-sm font-medium">{child.label}</span><span className="block text-xs text-muted-foreground">{child.detail}</span></span>
-                  {facets && <Badge variant={facets.availability === "unavailable" ? "outline" : "secondary"} className="shrink-0">{AVAILABILITY_LABELS[facets.availability]}</Badge>}
-                </button>
-              );
-            })}
-          </CardContent>
-        </Card>
-      ))}
-
-      <Card>
+      {activeTab === "general" && <Card>
         <CardHeader><CardTitle className="text-base">Documentation</CardTitle></CardHeader>
         <CardContent className="space-y-3">
           {nodeDocuments.length ? nodeDocuments.map((document) => {
@@ -431,30 +486,37 @@ function PlantTreeDetails({ node, onAddPart, onAddEquipment, onRequestSupport, o
             );
           }) : <p className="text-sm text-muted-foreground">No documents are linked to this item.</p>}
         </CardContent>
-      </Card>
+      </Card>}
     </div>
   );
 }
 
-const TREE_COLUMNS = "grid grid-cols-[minmax(13rem,1.2fr)_minmax(0,1.6fr)_6rem_minmax(0,1fr)] @2xl:grid-cols-[minmax(13rem,1.2fr)_minmax(0,1.6fr)_6rem_minmax(0,1fr)_8.5rem]";
+const TREE_COLUMNS = "grid grid-cols-[minmax(13rem,1.2fr)_minmax(0,1.6fr)_minmax(0,1fr)] @2xl:grid-cols-[minmax(13rem,1.2fr)_minmax(0,1.6fr)_minmax(0,1fr)_8.5rem]";
 const TREE_INDENT = 16;
 const STRUCTURE_LEVELS: Partial<Record<PlantTreeKind, string>> = { plant: "Plant", furnace: "Furnace", line: "Line" };
+const PLANT_LEVELS: Array<{ level: PlantTileLevel; label: string; icon: typeof Factory }> = [
+  { level: "plant", label: "Plant", icon: Factory },
+  { level: "furnace", label: "Furnace", icon: Flame },
+  { level: "line", label: "Line", icon: Rows3 },
+  { level: "machine", label: "Equipment", icon: Cog },
+  { level: "equipment", label: "Section Frame", icon: Wrench },
+  { level: "mechanism", label: "Section Frame Mechanism", icon: Boxes },
+];
 
 function getTreeRowColumns(node: PlantTreeNode) {
   const assembly = node.assemblyId && !node.partId ? assemblies.find((candidate) => candidate.id === node.assemblyId) : undefined;
   return {
     objectId: node.objectId ?? "-",
-    level: STRUCTURE_LEVELS[node.kind] ?? node.equipment?.level ?? assembly?.level ?? (node.kind === "part" ? "Part" : "Assembly"),
-    equipmentType: node.equipmentType ?? "-",
+    equipmentType: STRUCTURE_LEVELS[node.kind] ?? node.equipmentType ?? "-",
     serialNumber: assembly?.serialNumber ?? node.equipment?.serialNumber ?? "-",
   };
 }
 
-function DetailsSplit({ open, sticky, children, details }: { open: boolean; sticky?: boolean; children: ReactNode; details: ReactNode }) {
+function DetailsSplit({ open, sticky, scrollAreaHeight, children, details }: { open: boolean; sticky?: boolean; scrollAreaHeight?: number; children: ReactNode; details: ReactNode }) {
   return (
-    <section className={`grid items-start transition-[grid-template-columns,column-gap] duration-300 motion-reduce:transition-none ${open ? "gap-5 xl:grid-cols-[minmax(0,1.5fr)_minmax(0,0.8fr)]" : "gap-0 xl:grid-cols-[minmax(0,1.5fr)_minmax(0,0fr)]"}`}>
-      <div className="min-w-0">{children}</div>
-      <div aria-hidden={!open} inert={!open} className={`min-w-0 overflow-x-hidden ${open ? "" : "max-xl:hidden"} ${sticky ? "xl:sticky xl:top-[calc(6rem+var(--plant-toolbar-h))] xl:max-h-[calc(100vh-7rem-var(--plant-toolbar-h))] xl:self-start xl:overflow-y-auto" : ""}`}>
+    <section style={scrollAreaHeight ? { height: `${scrollAreaHeight}px` } : undefined} className={`grid min-h-0 items-start transition-[grid-template-columns,column-gap] duration-300 motion-reduce:transition-none ${open ? "gap-5 xl:grid-cols-[minmax(0,1.5fr)_minmax(0,0.8fr)]" : "gap-0 xl:grid-cols-[minmax(0,1.5fr)_minmax(0,0fr)]"}`}>
+      <div className="min-h-0 min-w-0">{children}</div>
+      <div aria-hidden={!open} inert={!open} style={scrollAreaHeight ? { maxHeight: `${scrollAreaHeight}px`, overflowY: "auto" } : undefined} className={`min-w-0 overflow-x-hidden ${open ? "" : "max-xl:hidden"} ${sticky ? "xl:sticky xl:top-[calc(6rem+var(--plant-toolbar-h))] xl:max-h-[calc(100vh-7rem-var(--plant-toolbar-h))] xl:self-start xl:overflow-y-auto" : ""}`}>
         <div className={`min-w-[18rem] transition-[translate,opacity] duration-300 motion-reduce:transition-none ${open ? "translate-x-0 opacity-100" : "translate-x-full opacity-0"}`}>{details}</div>
       </div>
     </section>
@@ -472,7 +534,7 @@ function TileItemCard({ node, selected, inCart, onSelect, onOpen }: {
   return (
     <div className={`flex min-w-0 overflow-hidden border bg-card transition-colors ${selected ? "border-primary bg-accent" : ""}`}>
       <button type="button" aria-pressed={selected} className="flex min-w-0 flex-1 items-center gap-4 p-4 text-left hover:bg-accent/50" onClick={onSelect}>
-        {node.pictureNumber ? <EquipmentImagePlaceholder pictureNumber={node.pictureNumber} description={node.label} className="h-20 w-28 min-h-0 shrink-0" /> : <span className="flex h-20 w-28 shrink-0 items-center justify-center border bg-muted/40"><Wrench className="size-5 text-muted-foreground" /></span>}
+        {node.pictureNumber ? <EquipmentImagePlaceholder pictureNumber={node.pictureNumber} description={node.label} className="h-24 w-36 min-h-0 shrink-0 border-0 bg-white p-0" /> : <span className="flex h-24 w-36 shrink-0 items-center justify-center border-0 bg-white"><Wrench className="size-5 text-muted-foreground" /></span>}
         <span className="min-w-0 flex-1">
           <span className="block text-xs font-medium uppercase text-muted-foreground">{columns.equipmentType}</span>
           <span className="mt-0.5 block font-medium">{node.label}</span>
@@ -490,7 +552,6 @@ function PlantTreeColumnHeader() {
     <div className={`${TREE_COLUMNS} border-b bg-muted/40 text-xs font-semibold text-muted-foreground`}>
       <span className="px-3 py-2">Object ID</span>
       <span className="py-2 pr-3">Object Description</span>
-      <span className="py-2 pr-3">Level</span>
       <span className="py-2 pr-3">Equipment Type</span>
       <span className="hidden py-2 pr-3 @2xl:block">Serial Number</span>
     </div>
@@ -511,11 +572,12 @@ function PlantTreeBranch({ node, depth, autoExpand, expandedIds, activeId, cart,
   const listChildrenInline = node.kind === "assembly";
   const expanded = listChildrenInline || expandedIds.has(node.id) || (autoExpand && hasChildren);
   const canToggle = hasChildren && !listChildrenInline;
+  const isEmptyStructure = (node.kind === "furnace" || node.kind === "line") && !hasChildren;
   const columns = getTreeRowColumns(node);
 
   return (
     <div>
-      <div data-tree-level data-node-id={node.id} data-level-label={node.path.slice(0, -1).join(" / ") || "My Plant"} className={`${TREE_COLUMNS} min-h-8 cursor-pointer items-center border-b text-sm ${activeId === node.id ? "bg-accent" : "hover:bg-accent/50"}`} onClick={() => onSelect(node)}>
+      <div data-tree-level data-node-id={node.id} data-level-label={node.path.slice(0, -1).join(" / ")} className={`${TREE_COLUMNS} min-h-8 cursor-pointer items-center border-b text-sm ${isEmptyStructure ? "bg-muted/60 text-muted-foreground hover:bg-muted/60" : activeId === node.id ? "bg-accent" : "hover:bg-accent/50"}`} onClick={() => onSelect(node)}>
         <div className="flex min-w-0 items-center gap-1 pr-3" style={{ paddingLeft: `${depth * TREE_INDENT + 4}px` }}>
           {canToggle ? <Button type="button" variant="ghost" size="icon" className="size-6 shrink-0" aria-label={`${expanded ? "Collapse" : "Expand"} ${node.label}`} aria-expanded={expanded} onClick={(event) => { event.stopPropagation(); onToggle(node.id); }}>{expanded ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}</Button> : <span className="size-6 shrink-0" />}
           <span className="truncate text-xs text-muted-foreground" title={columns.objectId}>{columns.objectId}</span>
@@ -524,7 +586,6 @@ function PlantTreeBranch({ node, depth, autoExpand, expandedIds, activeId, cart,
           <span className="truncate">{node.label}</span>
           {isPlantNodeInCart(node, cart) && <ShoppingCart className="size-3.5 shrink-0 text-muted-foreground" aria-label="Already in cart" />}
         </button>
-        <span className="truncate pr-3 text-muted-foreground">{columns.level}</span>
         <span className="truncate pr-3 text-muted-foreground" title={columns.equipmentType}>{columns.equipmentType}</span>
         <span className="hidden truncate pr-3 text-muted-foreground @2xl:block" title={columns.serialNumber}>{columns.serialNumber}</span>
       </div>
@@ -542,6 +603,7 @@ export function MyPlant({ accountId, onRequestSupport }: MyPlantProps) {
   const [initialUrlState] = useState(() => readPlantUrlState(window.location.search));
   const [viewMode, setViewMode] = useState<PlantViewMode>(initialUrlState.view);
   const [tileBrowseLevel, setTileBrowseLevel] = useState<PlantTileLevel>("plant");
+  const [genericLevelLabels, setGenericLevelLabels] = useState(true);
   const [treeQuery, setTreeQuery] = useState(initialUrlState.query);
   const [filters, setFilters] = useState<PlantFilters>(initialUrlState.filters);
   const [sort, setSort] = useState<PlantSortKey>(initialUrlState.sort);
@@ -556,9 +618,12 @@ export function MyPlant({ accountId, onRequestSupport }: MyPlantProps) {
   const [currentTreePath, setCurrentTreePath] = useState("My Plant");
   const [treeHasScrolled, setTreeHasScrolled] = useState(false);
   const treeScrollRef = useRef<HTMLDivElement>(null);
+  const tileScrollRef = useRef<HTMLDivElement>(null);
+  const plantSectionRef = useRef<HTMLElement>(null);
   const treeHeaderRef = useRef<HTMLDivElement>(null);
   const toolbarRef = useRef<HTMLDivElement>(null);
   const [toolbarHeight, setToolbarHeight] = useState(0);
+  const [scrollAreaHeight, setScrollAreaHeight] = useState(0);
   const [selectedPlantId, setSelectedPlantId] = useState<string>();
   const [selectedFurnaceId, setSelectedFurnaceId] = useState<string>();
   const [selectedLineId, setSelectedLineId] = useState<string>();
@@ -629,6 +694,18 @@ export function MyPlant({ accountId, onRequestSupport }: MyPlantProps) {
   const tileItemNodes = tileBrowseLevel === "mechanism" ? tileMechanismNodes : tileEquipmentNodes;
   const tileEquipmentGroups = groupEquipmentNodes(tileItemNodes).map((group) => ({ ...group, nodes: sortPlantNodes(group.nodes, sort) }));
   const selectedTileEquipmentNode = selectedTileEquipmentId ? findTreeNode(allTreeNodes, selectedTileEquipmentId) : undefined;
+  const activeNavigationNode = viewMode === "tree"
+    ? selectedTreeNode ?? (lastExpandedId ? findTreeNode(allTreeNodes, lastExpandedId) : undefined)
+    : selectedTileEquipmentNode ?? selectedLineEquipmentNode ?? findMachineNode(allTreeNodes, selectedMachineId);
+  const activeNavigationPath = activeNavigationNode ? findTreeNodePath(allTreeNodes, activeNavigationNode.id) : [];
+  const navigationEntityLabels: Partial<Record<PlantTileLevel, string>> = {
+    plant: selectedPlant?.name ?? activeNavigationPath.find((node) => node.kind === "plant")?.label,
+    furnace: selectedFurnace?.name ?? activeNavigationPath.find((node) => node.kind === "furnace")?.label,
+    line: selectedLine?.name ?? activeNavigationPath.find((node) => node.kind === "line")?.label,
+    machine: machines.find((machine) => machine.id === (activeNavigationNode?.machineId ?? selectedMachineId))?.name,
+    equipment: activeNavigationPath.find((node) => node.kind === "equipment")?.label ?? (tileBrowseLevel === "mechanism" ? frameScopeNode?.label : undefined),
+    mechanism: [...activeNavigationPath].reverse().find((node) => node.kind === "assembly" || node.equipmentType === "Section Frame Mechanism")?.label,
+  };
   const selectedMachineRecord = selectedMachineId ? machines.find((machine) => machine.id === selectedMachineId) : undefined;
   const { showFeedback } = useActionFeedback();
   const mapVisible = !filtersActive && (viewMode === "tree" ? currentTreeBrowseLevel === "plant" && !normalizedQuery : tileBrowseLevel === "plant");
@@ -644,6 +721,7 @@ export function MyPlant({ accountId, onRequestSupport }: MyPlantProps) {
   const tileDetailsOpen = Boolean(selectedTileDetailsNode);
   const tileDetailsNode = selectedTileDetailsNode ?? lastTileDetailsNode;
   const detailsOpen = viewMode === "tree" ? treeDetailsOpen : tileDetailsOpen;
+  const scrollAreaStyle = scrollAreaHeight > 0 ? { height: `${scrollAreaHeight}px` } : undefined;
 
   function closeDetails() {
     if (viewMode === "tree") {
@@ -693,6 +771,27 @@ export function MyPlant({ accountId, onRequestSupport }: MyPlantProps) {
     observer.observe(element);
     return () => observer.disconnect();
   }, []);
+
+  useEffect(() => {
+    const scrollElement = viewMode === "tree" ? treeScrollRef.current : tileScrollRef.current;
+    if (!scrollElement) return;
+
+    const updateScrollAreaHeight = () => {
+      const documentTop = scrollElement.getBoundingClientRect().top + window.scrollY;
+      const nextHeight = Math.max(240, Math.floor(window.innerHeight - documentTop - 32));
+      setScrollAreaHeight((currentHeight) => currentHeight === nextHeight ? currentHeight : nextHeight);
+    };
+
+    const observer = new ResizeObserver(updateScrollAreaHeight);
+    if (plantSectionRef.current) observer.observe(plantSectionRef.current);
+    if (toolbarRef.current) observer.observe(toolbarRef.current);
+    window.addEventListener("resize", updateScrollAreaHeight);
+    updateScrollAreaHeight();
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", updateScrollAreaHeight);
+    };
+  }, [viewMode, tileBrowseLevel, currentTreeBrowseLevel, mapVisible, filtersActive, attributeFiltersActive, normalizedQuery, toolbarHeight]);
 
   function applyScope(scope: PlantScope) {
     setSelectedResultId(undefined);
@@ -849,6 +948,7 @@ export function MyPlant({ accountId, onRequestSupport }: MyPlantProps) {
   }, [viewMode, expandedIds]);
 
   function navigatePlantLevel(level: PlantTileLevel) {
+    setGenericLevelLabels(true);
     if (viewMode === "tree") {
       setTreeQuery("");
       setExpandedIds(getExpandedIdsForLevel(allTreeNodes, level));
@@ -917,6 +1017,7 @@ export function MyPlant({ accountId, onRequestSupport }: MyPlantProps) {
   }
 
   function toggleTreeNode(id: string) {
+    setGenericLevelLabels(false);
     setLastExpandedId(expandedIds.has(id) ? findAncestorIds(allTreeNodes, id).at(-1) : id);
     setExpandedIds((current) => {
       const next = new Set(current);
@@ -932,6 +1033,7 @@ export function MyPlant({ accountId, onRequestSupport }: MyPlantProps) {
   }
 
   function selectTreeNode(node: PlantTreeNode) {
+    setGenericLevelLabels(false);
     setActiveTreeNodeId(node.id);
     setSelectedPlantId(node.plantId || undefined);
     setSelectedFurnaceId(node.furnaceId);
@@ -945,6 +1047,7 @@ export function MyPlant({ accountId, onRequestSupport }: MyPlantProps) {
   }
 
   function selectHierarchySearchResult(node: PlantTreeNode) {
+    setGenericLevelLabels(false);
     setActiveTreeNodeId(node.id);
     if (viewMode === "tree") {
       selectTreeNode(node);
@@ -993,6 +1096,7 @@ export function MyPlant({ accountId, onRequestSupport }: MyPlantProps) {
   }
 
   function openPlant(plant: PlantRecord) {
+    setGenericLevelLabels(false);
     setSelectedPlantId(plant.id);
     setSelectedFurnaceId(undefined);
     setSelectedLineId(undefined);
@@ -1009,6 +1113,7 @@ export function MyPlant({ accountId, onRequestSupport }: MyPlantProps) {
   }
 
   function openFurnace(furnace: FurnaceRecord) {
+    setGenericLevelLabels(false);
     setSelectedFurnaceId(furnace.id);
     setSelectedLineId(undefined);
     setSelectedMachineId(undefined);
@@ -1020,6 +1125,7 @@ export function MyPlant({ accountId, onRequestSupport }: MyPlantProps) {
   }
 
   function openLine(line: ProductionLineRecord) {
+    setGenericLevelLabels(false);
     const parentFurnace = selectedPlant?.furnaces.find((furnace) => furnace.lines.some((candidate) => candidate.id === line.id));
     setSelectedFurnaceId(parentFurnace?.id);
     setSelectedLineId(line.id);
@@ -1033,6 +1139,7 @@ export function MyPlant({ accountId, onRequestSupport }: MyPlantProps) {
 
   function openMachineNode(node: PlantTreeNode) {
     if (!node.machineId) return;
+    setGenericLevelLabels(false);
     setSelectedPlantId(node.plantId);
     setSelectedFurnaceId(node.furnaceId);
     setSelectedLineId(node.lineId);
@@ -1045,6 +1152,7 @@ export function MyPlant({ accountId, onRequestSupport }: MyPlantProps) {
   }
 
   function selectTileEquipment(node: PlantTreeNode) {
+    setGenericLevelLabels(false);
     setSelectedPlantId(node.plantId);
     setSelectedFurnaceId(node.furnaceId);
     setSelectedLineId(node.lineId);
@@ -1067,19 +1175,28 @@ export function MyPlant({ accountId, onRequestSupport }: MyPlantProps) {
   }
 
   function openFrame(node: PlantTreeNode) {
+    setGenericLevelLabels(false);
     setFrameScopeId(node.id);
     setSelectedTileEquipmentId(undefined);
     setTileBrowseLevel("mechanism");
   }
 
   return (
-    <section className="space-y-6" style={{ "--plant-toolbar-h": `${toolbarHeight}px` } as CSSProperties}>
+    <section ref={plantSectionRef} className="space-y-6" style={{ "--plant-toolbar-h": `${toolbarHeight}px` } as CSSProperties}>
       <header>
         <h1 className="text-3xl font-semibold tracking-tight">My Plant</h1>
         <div aria-hidden={!mapVisible} inert={!mapVisible} className={`grid transition-[grid-template-rows,opacity,margin] duration-300 ${mapVisible ? "mt-3 grid-rows-[1fr] opacity-100" : "mt-0 grid-rows-[0fr] opacity-0"}`}>
           <div className="min-h-0 overflow-hidden"><PlantLocationMap plantRecords={tenantPlants} onSelect={openPlant} /></div>
         </div>
       </header>
+
+      {!(viewMode === "tiles" && (tileBrowseLevel === "plant" || filtersActive)) && !(viewMode === "tree" && currentTreeBrowseLevel === "plant") && <nav aria-label="Plant levels" className="flex min-w-0 items-start gap-1 overflow-x-auto py-1">
+        {PLANT_LEVELS.map(({ level, label, icon: Icon }) => {
+          const isActive = (viewMode === "tiles" ? tileBrowseLevel : currentTreeBrowseLevel) === level;
+          const displayedLabel = genericLevelLabels ? label : navigationEntityLabels[level] ?? label;
+          return <Button key={level} type="button" variant={isActive ? "secondary" : "ghost"} className="h-[110px] w-32 shrink-0 flex-col justify-start gap-[10px] px-2 pb-2 pt-[20px]" aria-label={displayedLabel} title={displayedLabel} aria-current={isActive ? "step" : undefined} disabled={level !== "plant" && viewMode === "tiles" && !selectedPlant} onClick={() => navigatePlantLevel(level)}><span className="flex h-[30px] w-full shrink-0 items-center justify-center"><Icon className="!size-[30px] shrink-0" /></span><span className="line-clamp-2 h-10 w-full whitespace-normal break-words text-center text-xs leading-tight">{displayedLabel}</span></Button>;
+        })}
+      </nav>}
 
       <div ref={toolbarRef} className="sticky top-[5.05rem] z-20 bg-background">
         <PlantToolbar
@@ -1105,24 +1222,10 @@ export function MyPlant({ accountId, onRequestSupport }: MyPlantProps) {
         />
       </div>
 
-      {!(viewMode === "tiles" && (tileBrowseLevel === "plant" || filtersActive)) && !(viewMode === "tree" && currentTreeBrowseLevel === "plant") && <nav aria-label="Plant levels" className="flex items-center gap-2">
-        <Button type="button" size="icon" variant={(viewMode === "tiles" ? tileBrowseLevel : currentTreeBrowseLevel) === "plant" ? "secondary" : "ghost"} aria-label="Plant level" title="Plant" aria-current={(viewMode === "tiles" ? tileBrowseLevel : currentTreeBrowseLevel) === "plant" ? "step" : undefined} onClick={() => navigatePlantLevel("plant")}><Factory className="size-4" /></Button>
-        <span aria-hidden="true" className="h-px w-5 bg-border" />
-        <Button type="button" size="icon" variant={(viewMode === "tiles" ? tileBrowseLevel : currentTreeBrowseLevel) === "furnace" ? "secondary" : "ghost"} aria-label="Furnace level" title="Furnace" aria-current={(viewMode === "tiles" ? tileBrowseLevel : currentTreeBrowseLevel) === "furnace" ? "step" : undefined} disabled={viewMode === "tiles" && !selectedPlant} onClick={() => navigatePlantLevel("furnace")}><Flame className="size-4" /></Button>
-        <span aria-hidden="true" className="h-px w-5 bg-border" />
-        <Button type="button" size="icon" variant={(viewMode === "tiles" ? tileBrowseLevel : currentTreeBrowseLevel) === "line" ? "secondary" : "ghost"} aria-label="Production line level" title="Production line" aria-current={(viewMode === "tiles" ? tileBrowseLevel : currentTreeBrowseLevel) === "line" ? "step" : undefined} disabled={viewMode === "tiles" && !selectedPlant} onClick={() => navigatePlantLevel("line")}><Rows3 className="size-4" /></Button>
-        <span aria-hidden="true" className="h-px w-5 bg-border" />
-        <Button type="button" size="icon" variant={(viewMode === "tiles" ? tileBrowseLevel : currentTreeBrowseLevel) === "machine" ? "secondary" : "ghost"} aria-label="Machine level" title="Machine" aria-current={(viewMode === "tiles" ? tileBrowseLevel : currentTreeBrowseLevel) === "machine" ? "step" : undefined} disabled={viewMode === "tiles" && !selectedPlant} onClick={() => navigatePlantLevel("machine")}><Cog className="size-4" /></Button>
-        <span aria-hidden="true" className="h-px w-5 bg-border" />
-        <Button type="button" size="icon" variant={(viewMode === "tiles" ? tileBrowseLevel : currentTreeBrowseLevel) === "equipment" ? "secondary" : "ghost"} aria-label="Equipment level" title="Equipment" aria-current={(viewMode === "tiles" ? tileBrowseLevel : currentTreeBrowseLevel) === "equipment" ? "step" : undefined} disabled={viewMode === "tiles" && !selectedPlant} onClick={() => navigatePlantLevel("equipment")}><Wrench className="size-4" /></Button>
-        <span aria-hidden="true" className="h-px w-5 bg-border" />
-        <Button type="button" size="icon" variant={(viewMode === "tiles" ? tileBrowseLevel : currentTreeBrowseLevel) === "mechanism" ? "secondary" : "ghost"} aria-label="Section frame mechanism level" title="Section frame mechanism" aria-current={(viewMode === "tiles" ? tileBrowseLevel : currentTreeBrowseLevel) === "mechanism" ? "step" : undefined} disabled={viewMode === "tiles" && !selectedPlant} onClick={() => navigatePlantLevel("mechanism")}><Boxes className="size-4" /></Button>
-      </nav>}
-
       {viewMode === "tree" && filtersActive && filterResultSummary}
 
-      {viewMode === "tree" && <DetailsSplit open={treeDetailsOpen} details={treeDetailsNode && <PlantTreeDetails node={treeDetailsNode} onAddPart={addTreePartToCart} onAddEquipment={addTreeEquipmentToCart} onRequestSupport={onRequestSupport} onSelectChild={revealTreeNode} onClose={closeDetails} />}>
-        <div ref={treeScrollRef} onScroll={handleTreeScroll} className="@container max-h-[calc(100vh-8rem-var(--plant-toolbar-h))] min-h-0 overflow-y-auto border bg-card">
+      {viewMode === "tree" && <DetailsSplit open={treeDetailsOpen} scrollAreaHeight={scrollAreaHeight} details={treeDetailsNode && <PlantTreeDetails node={treeDetailsNode} treeNodes={allTreeNodes} onAddPart={addTreePartToCart} onAddEquipment={addTreeEquipmentToCart} onRequestSupport={onRequestSupport} onSelectChild={revealTreeNode} onClose={closeDetails} />}>
+        <div ref={treeScrollRef} style={scrollAreaStyle} onScroll={handleTreeScroll} className="@container h-full min-h-0 overflow-y-auto border bg-card">
           <Card className="rounded-none border-0 shadow-none">
             <div ref={treeHeaderRef} className="sticky top-0 z-20 bg-card">
               {treeHasScrolled && <nav aria-label="Plant hierarchy" aria-live="polite" className="flex items-center gap-2 border-b px-3 py-2 text-sm">
@@ -1140,65 +1243,50 @@ export function MyPlant({ accountId, onRequestSupport }: MyPlantProps) {
         </div>
       </DetailsSplit>}
 
-      {viewMode === "tiles" && !filtersActive && selectedPlant && <nav aria-label="Plant hierarchy" className="sticky top-[calc(5.05rem+var(--plant-toolbar-h))] z-10 flex items-center gap-2 border-b bg-background/95 py-2 text-sm backdrop-blur">
-        <button className={!selectedPlant ? "font-semibold text-foreground" : "text-muted-foreground hover:text-foreground"} onClick={() => navigateTileLevel("plant")}>My Plant</button>
-        {selectedPlant && <><span className="text-muted-foreground">/</span><button className={!selectedFurnace ? "font-semibold text-foreground" : "text-muted-foreground hover:text-foreground"} onClick={() => { setSelectedFurnaceId(undefined); setSelectedLineId(undefined); setSelectedMachineId(undefined); setSelectedMachineAssemblyId(undefined); setSelectedEquipmentId(undefined); }}>{selectedPlant.name}</button></>}
-        {selectedFurnace && <><span className="text-muted-foreground">/</span><button className={!selectedLine ? "font-semibold text-foreground" : "text-muted-foreground hover:text-foreground"} onClick={() => { setSelectedLineId(undefined); setSelectedMachineId(undefined); setSelectedMachineAssemblyId(undefined); setSelectedEquipmentId(undefined); }}>{selectedFurnace.name}</button></>}
-        {selectedLine && <><span className="text-muted-foreground">/</span><button className={!selectedMachineId ? "font-semibold text-foreground" : "text-muted-foreground hover:text-foreground"} onClick={() => { setSelectedMachineId(undefined); setSelectedMachineAssemblyId(undefined); }}>{selectedLine.name}</button></>}
-        {selectedMachineRecord && <><span className="text-muted-foreground">/</span>{tileBrowseLevel === "mechanism" && frameScopeNode ? <button className="text-muted-foreground hover:text-foreground" onClick={() => { setFrameScopeId(undefined); setSelectedTileEquipmentId(undefined); setTileBrowseLevel("equipment"); }}>{selectedMachineRecord.name}</button> : <span className="font-semibold">{selectedMachineRecord.name}</span>}</>}
-        {tileBrowseLevel === "mechanism" && frameScopeNode && <><span className="text-muted-foreground">/</span><span className="font-semibold">{frameScopeNode.label}</span></>}
-      </nav>}
-
       {viewMode === "tiles" && !filtersActive && tileBrowseLevel === "plant" && (
-        <div className="grid gap-4 xl:grid-cols-3 2xl:grid-cols-4">
+        <div ref={tileScrollRef} style={scrollAreaStyle} className="grid min-h-0 content-start gap-4 overflow-y-auto xl:grid-cols-3 2xl:grid-cols-4">
             {tenantPlants.map((plant) => <button type="button" key={plant.id} className="group overflow-hidden rounded border bg-card text-left transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => openPlant(plant)}><div className="flex h-36 items-center justify-center border-b bg-muted/40"><Factory className="size-10 text-muted-foreground" /></div><div className="space-y-4 p-5"><div><h3 className="font-semibold">{plant.name}</h3><p className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground"><MapPin className="size-3.5" />{plant.location}</p></div><div className="flex items-center justify-between"><Badge variant="outline">{plant.furnaces.length} furnaces</Badge><ArrowRight className="size-4 transition-transform group-hover:translate-x-1" /></div></div></button>)}
         </div>
       )}
 
       {viewMode === "tiles" && !filtersActive && tileBrowseLevel === "furnace" && selectedPlant && (
-        <section>
-          {tileFurnaces.length ? <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">{tileFurnaces.map((furnace) => <button key={furnace.id} className="flex items-center justify-between border bg-background p-5 text-left hover:bg-accent" onClick={() => openFurnace(furnace)}><span className="flex items-center gap-3"><Flame className="size-5 text-muted-foreground" /><span><span className="block font-medium">{furnace.name}</span><span className="text-sm text-muted-foreground">{furnace.lines.length} lines</span></span></span><ArrowRight className="size-4" /></button>)}</div> : <p className="border p-6 text-sm text-muted-foreground">No furnaces are listed for this plant.</p>}
+        <section ref={tileScrollRef} style={scrollAreaStyle} className="min-h-0 overflow-y-auto">
+          {tileFurnaces.length ? <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">{tileFurnaces.map((furnace) => <button key={furnace.id} className={`flex items-center justify-between p-5 text-left ${furnace.lines.length ? "border bg-background hover:bg-accent" : "border-0 bg-muted/25 text-muted-foreground/70 hover:bg-muted/35"}`} onClick={() => openFurnace(furnace)}><span className="flex items-center gap-3"><Flame className="size-5 text-muted-foreground" /><span><span className="block font-medium">{furnace.name}</span><span className="text-sm text-muted-foreground">{furnace.lines.length} lines</span></span></span><ArrowRight className="size-4" /></button>)}</div> : <p className="border p-6 text-sm text-muted-foreground">No furnaces are listed for this plant.</p>}
         </section>
       )}
 
       {viewMode === "tiles" && !filtersActive && tileBrowseLevel === "line" && selectedPlant && (
-        <section>
-          {tileLines.length ? <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">{tileLines.map((line) => <button key={line.id} className="flex items-center justify-between border bg-background p-5 text-left hover:bg-accent" onClick={() => openLine(line)}><span className="flex items-center gap-3"><Rows3 className="size-5 text-muted-foreground" /><span><span className="block font-medium">{line.name}</span><span className="text-sm text-muted-foreground">{line.equipment.filter((equipment) => equipment.equipmentType === "Machine").length} machines · {line.equipment.filter((equipment) => equipment.equipmentType !== "Machine").length} other equipment</span></span></span><ArrowRight className="size-4" /></button>)}</div> : <p className="border p-6 text-sm text-muted-foreground">No line records are included for this plant.</p>}
+        <section ref={tileScrollRef} style={scrollAreaStyle} className="min-h-0 overflow-y-auto">
+          {tileLines.length ? <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">{tileLines.map((line) => <button key={line.id} className={`flex items-center justify-between p-5 text-left ${line.equipment.length ? "border bg-background hover:bg-accent" : "border-0 bg-muted/25 text-muted-foreground/70 hover:bg-muted/35"}`} onClick={() => openLine(line)}><span className="flex items-center gap-3"><Rows3 className="size-5 text-muted-foreground" /><span><span className="block font-medium">{line.name}</span><span className="text-sm text-muted-foreground">{line.equipment.filter((equipment) => equipment.equipmentType === "Machine").length} machines · {line.equipment.filter((equipment) => equipment.equipmentType !== "Machine").length} other equipment</span></span></span><ArrowRight className="size-4" /></button>)}</div> : <p className="border p-6 text-sm text-muted-foreground">No line records are included for this plant.</p>}
         </section>
       )}
 
       {viewMode === "tiles" && !filtersActive && tileBrowseLevel === "machine" && selectedPlant && (
-        <DetailsSplit open={tileDetailsOpen} sticky details={tileDetailsNode && <PlantTreeDetails node={tileDetailsNode} onAddPart={addTreePartToCart} onAddEquipment={addTreeEquipmentToCart} onRequestSupport={onRequestSupport} onSelectChild={selectTileEquipment} onClose={closeDetails} />}>
+        <DetailsSplit open={tileDetailsOpen} sticky scrollAreaHeight={scrollAreaHeight} details={tileDetailsNode && <PlantTreeDetails node={tileDetailsNode} treeNodes={allTreeNodes} onAddPart={addTreePartToCart} onAddEquipment={addTreeEquipmentToCart} onRequestSupport={onRequestSupport} onSelectChild={selectTileEquipment} onClose={closeDetails} />}>
+          <div ref={tileScrollRef} style={scrollAreaStyle} className="min-h-0 overflow-y-auto">
           {tileMachineNodes.length ? <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">{tileMachineNodes.map((node) => (
             <TileItemCard key={node.id} node={node} selected={selectedEquipmentId === node.id} inCart={isPlantNodeInCart(node, cart)} onSelect={() => setSelectedEquipmentId(node.id)} onOpen={node.kind === "machine" && node.children.length ? () => openMachineNode(node) : undefined} />
           ))}</div> : <p className="border p-6 text-sm text-muted-foreground">No machines are listed for this plant.</p>}
+          </div>
         </DetailsSplit>
       )}
 
       {viewMode === "tiles" && !filtersActive && (tileBrowseLevel === "equipment" || tileBrowseLevel === "mechanism") && selectedPlant && (
-        <DetailsSplit open={tileDetailsOpen} sticky details={tileDetailsNode && <PlantTreeDetails node={tileDetailsNode} onAddPart={addTreePartToCart} onAddEquipment={addTreeEquipmentToCart} onRequestSupport={onRequestSupport} onSelectChild={selectTileEquipment} onClose={closeDetails} />}>
-          <div className="space-y-5">
-            {tileEquipmentGroups.map((group) => (
-              <section key={group.label} className="space-y-3">
-                <div className="sticky top-[calc(7.375rem+var(--plant-toolbar-h))] z-10 flex items-center justify-between border-b bg-background/95 py-2 backdrop-blur">
-                  <h3 className="font-semibold">{group.label}</h3>
-                  <span className="text-sm text-muted-foreground">{group.nodes.length}</span>
-                </div>
-                <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
-                  {group.nodes.map((node) => (
-                    <TileItemCard key={node.id} node={node} selected={selectedTileEquipmentId === node.id} inCart={isPlantNodeInCart(node, cart)} onSelect={() => setSelectedTileEquipmentId(node.id)} onOpen={tileBrowseLevel === "equipment" && node.children.length ? () => openFrame(node) : undefined} />
-                  ))}
-                </div>
-              </section>
+        <DetailsSplit open={tileDetailsOpen} sticky scrollAreaHeight={scrollAreaHeight} details={tileDetailsNode && <PlantTreeDetails node={tileDetailsNode} treeNodes={allTreeNodes} onAddPart={addTreePartToCart} onAddEquipment={addTreeEquipmentToCart} onRequestSupport={onRequestSupport} onSelectChild={selectTileEquipment} onClose={closeDetails} />}>
+          <div ref={tileScrollRef} style={scrollAreaStyle} className="min-h-0 overflow-y-auto">
+          <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
+            {tileEquipmentGroups.flatMap((group) => group.nodes).map((node) => (
+              <TileItemCard key={node.id} node={node} selected={selectedTileEquipmentId === node.id} inCart={isPlantNodeInCart(node, cart)} onSelect={() => setSelectedTileEquipmentId(node.id)} onOpen={tileBrowseLevel === "equipment" && node.children.length ? () => openFrame(node) : undefined} />
             ))}
             {!tileItemNodes.length && <p className="border p-6 text-sm text-muted-foreground">No equipment is listed here.</p>}
+          </div>
           </div>
         </DetailsSplit>
       )}
 
       {viewMode === "tiles" && filtersActive && (
-        <section aria-label="Filtered plant items" className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.3fr)_minmax(18rem,0.9fr)]">
-          <div className="space-y-2">
+        <section aria-label="Filtered plant items" style={scrollAreaStyle} className="grid min-h-0 items-start gap-5 xl:grid-cols-[minmax(0,1.3fr)_minmax(18rem,0.9fr)]">
+          <div ref={tileScrollRef} style={scrollAreaStyle} className="min-h-0 space-y-2 overflow-y-auto">
             {filterResultSummary}
             {filteredItemNodes.length ? filteredItemNodes.map((node) => {
               const facets = getPlantItemFacets(node);
@@ -1231,8 +1319,8 @@ export function MyPlant({ accountId, onRequestSupport }: MyPlantProps) {
               </div>
             )}
           </div>
-          <div className="xl:sticky xl:top-[calc(6rem+var(--plant-toolbar-h))] xl:max-h-[calc(100vh-7rem-var(--plant-toolbar-h))] xl:self-start xl:overflow-y-auto">
-            <PlantTreeDetails node={selectedResultNode} onAddPart={addTreePartToCart} onAddEquipment={addTreeEquipmentToCart} onRequestSupport={onRequestSupport} onSelectChild={(child) => setSelectedResultId(child.id)} />
+          <div style={scrollAreaHeight ? { maxHeight: `${scrollAreaHeight}px` } : undefined} className="xl:sticky xl:top-[calc(6rem+var(--plant-toolbar-h))] xl:max-h-[calc(100vh-7rem-var(--plant-toolbar-h))] xl:self-start xl:overflow-y-auto">
+            <PlantTreeDetails node={selectedResultNode} treeNodes={allTreeNodes} onAddPart={addTreePartToCart} onAddEquipment={addTreeEquipmentToCart} onRequestSupport={onRequestSupport} onSelectChild={(child) => setSelectedResultId(child.id)} />
           </div>
         </section>
       )}

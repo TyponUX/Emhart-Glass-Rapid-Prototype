@@ -62,7 +62,7 @@ export const PART_STATUS_LABELS: Record<PartStatusFacet, string> = { current: "C
 export const SERVICE_LABELS: Record<ServiceFacet, string> = { "open-request": "Open support request", "maintenance-due": "Maintenance due" };
 export const DOCUMENT_TYPES: DocumentType[] = ["Machine overview", "Technical bulletin", "Troubleshooting guide"];
 export const SORT_LABELS: Record<PlantSortKey, string> = {
-  hierarchy: "Plant order",
+  hierarchy: "Sort by",
   name: "Name A–Z",
   "part-number": "Part / object number",
   "lead-time": "Fastest delivery",
